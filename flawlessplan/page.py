@@ -175,6 +175,19 @@ def markup(title, sheets, root=None, send=None, hidden=(), version=None):
             + head + '\n</head>\n<body>\n<header' + body + '\n</body>\n</html>\n')
 
 
+def about(title, sheets):
+    """A house's sheets in a line, for a search to show under its name: as
+    much of it as fits in the 160 characters one shows."""
+    names = ', '.join(s.tab for s in sheets)
+    for text in ('%s floor plans drawn to scale: %s. Every room with its measured size and area, and the notes written beside each sheet.',
+                 '%s floor plans drawn to scale: %s. Every room with its measured size.',
+                 '%s floor plans drawn to scale: %s.'):
+        text = text % (title, names)
+        if len(text) <= 160:
+            return text
+    return text[:159].rstrip(' ,') + '…'
+
+
 def share(title, sheets):
     """One file to send: every sheet of a house (solve.Sheet) and what is
     said beside it, each drawn once and as the house file has it. It asks
@@ -192,7 +205,7 @@ def share(title, sheets):
                    '%s\n    </svg>\n  </div>\n'
                    '  <div class="infos">\n<aside class="info">\n%s\n</aside>\n  </div>\n</section>'
                    % (s.id, s.id, s.id, x, y, w, h, e(s.tab), '\n'.join(s.lines), '\n'.join(said(s.info))))
-    parts = {'TITLE': e(title), 'ICON': icon(), 'TABS': '\n'.join(tabs), 'SHEETS': '\n'.join(out),
+    parts = {'TITLE': e(title), 'ABOUT': e(about(title, sheets)), 'ICON': icon(), 'TABS': '\n'.join(tabs), 'SHEETS': '\n'.join(out),
              'CSS': (fonts_inside() + asset('page.css').replace('__DRAWING__', render.css(VARS, 'svg.draw'))
                      + asset('share.css')),
              'JS': asset('share.js').replace('__VIEW__', asset('view.js')).replace('__KEYS__', _js([s.id for s in sheets]))}

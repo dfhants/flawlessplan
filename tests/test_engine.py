@@ -193,6 +193,7 @@ def test_the_page_has_each_control_once_and_a_pane_per_sheet():
     beside = page.markup('A house', [Blank('a')], root='../')        # built beside an index: a way back, fonts, installable
     assert beside.count('class="home" href="../index.html"') == 1 and 'href="../manifest.webmanifest"' in beside
     assert 'url(../fonts/archivo.woff2)' in beside
+    assert html.count('<h1') == 1 and '<h1 class="vh">A house floor plans</h1>' in html     # one heading, said and not shown
 
 
 def test_the_page_that_is_sent_stands_alone_and_draws_each_sheet_once():
@@ -200,6 +201,9 @@ def test_the_page_that_is_sent_stands_alone_and_draws_each_sheet_once():
     s = solve.solves(CHANGED)
     html = page.share('A "house"', s.sheets)
     assert '__' not in html and '<title>A &quot;house&quot;</title>' in html
+    about = re.findall(r'<meta name="description" content="([^"]*)">', html)       # what a search shows: the house and its sheets
+    assert len(about) == 1 and about[0].startswith('A &quot;house&quot; floor plans drawn to scale: ' + ', '.join(p.tab for p in s.sheets))
+    assert len(page.about('A house', s.sheets*40)) <= 160 and html.count('<h1') == 1
     assert 'src=' not in html and '<link rel="manifest"' not in html and 'fetch(' not in html     # nothing asked of anywhere
     assert html.count('url(data:font/woff2;base64,') == 3 and not re.search(r'url\((?!data:|#)', html)
     assert 'data-tool' not in html and 'marks.json' not in html                # read, not drawn on
