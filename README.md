@@ -128,10 +128,8 @@ things about it keep the drawing honest:
   4.10" and every wall, door and sheet that depends on it follows.
 - **Room sizes are measured, never typed.** What a label says is what the
   drawing is.
-- **It checks itself.** A door that runs off its wall, two rooms that are
-  really one because a wall stops short, a room that does not come out at
-  the size you were quoted: each is reported, to Claude and to you, and not
-  quietly drawn wrong.
+- **It checks itself.** Every change is validated before it is kept, so
+  Claude catches its own mistakes and tells you what does not add up.
 
 ## What it does not do
 
