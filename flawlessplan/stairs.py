@@ -14,12 +14,20 @@ A plan is cut at waist height, so a floor shows the stair only up to
 `cut_risers` (`show: below`) and the floor above shows the rest (`show:
 above`). The cut end IS the zigzag: the flight's outline is closed on it,
 half a tread past a nosing so the two never coincide.
+
+On the floor above, what is past the zigzag is no floor: it is the well the
+rest of the flight rises through, as far as no wall of this floor stands
+over it. It is the stair's `void`, shaded, and `rail` is the balustrade:
+every edge of the well that is against no wall, but for the head, where the
+stair is stepped onto. Both are worked out against the sheet's walls (`well`).
 """
 import math
-from shapely.geometry import Polygon
-from shapely.ops import unary_union
+from shapely.geometry import Polygon, LineString
+from shapely.ops import unary_union, linemerge
 
 BREAK_AMP = 0.075        # how far the zigzag swings either side of the cut
+GRIP = 0.02              # how near a wall an edge of the well is on it
+SHORT = 0.3              # a run of balustrade shorter than this is not one
 
 
 def _add(a, b, k=1.0):
@@ -173,6 +181,37 @@ def build(st):
         foot = _add(P[0], D[0], -0.28)              # clear of the bottom riser
         label = ((foot[0], foot[1] + 0.08), st['label'])
     shapes = [Polygon(p) for p in polys if len(p) >= 3]
+    block = unary_union([s.buffer(0) for s in shapes]) if shapes else None
+    void = None
+    if show == 'above' and cutpt is not None:       # the rest of the flight, as the floor below shows it
+        void = build(dict(st, show='below'))['block']
+    n = (-D[-1][1]*W[-1]/2.0, D[-1][0]*W[-1]/2.0)
     return {'polys': polys, 'lines': lines, 'walk': walk, 'head': head, 'label': label,
-            'risers': len(units) + 1,
-            'block': unary_union([s.buffer(0) for s in shapes]) if shapes else None}
+            'risers': len(units) + 1, 'block': block, 'void': void, 'rail': [],
+            'top': (_add(P[-1], n), _add(P[-1], n, -1))}
+
+
+def well(g, solid):
+    """A stair's well on the floor above, against the sheet's masonry
+    (`solid`): its void and its balustrade.
+
+    The void is the rest of the flight as far as it is open to the head of
+    the stair: where it passes under a wall of this floor there is floor
+    over it, and it is left out. The balustrade is every edge of the well
+    that is against no wall, less the head; runs of points."""
+    if g['void'] is None:
+        return None, []
+    lumps = g['void'].difference(solid.buffer(GRIP/2, join_style=2))
+    lumps = [p for p in getattr(lumps, 'geoms', [lumps])
+             if p.geom_type == 'Polygon' and (g['block'] is None or p.distance(g['block']) < 2*GRIP)]
+    if not lumps:
+        return None, []
+    void = unary_union(lumps)
+    whole = unary_union([s for s in (g['block'], void) if s is not None])
+    whole = whole.buffer(2*GRIP, join_style=2).buffer(-2*GRIP, join_style=2)     # one outline, the cut inside it
+    edge = whole.boundary.difference(solid.buffer(2*GRIP, join_style=2))
+    edge = edge.difference(LineString(g['top']).buffer(2*GRIP, cap_style=2))
+    if edge.geom_type == 'MultiLineString':
+        edge = linemerge(edge)
+    runs = [r for r in getattr(edge, 'geoms', [edge]) if r.geom_type == 'LineString']
+    return void, [list(r.coords) for r in runs if r.length > SHORT]

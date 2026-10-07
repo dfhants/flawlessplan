@@ -1455,3 +1455,25 @@ def test_both_example_houses_have_a_rooflight_drawn_and_spoken_of():
         assert len(sh.plan.rooflights) == 1 and sh.plan.rooflights[0]['over'] and 'class="rooflight"' in '\n'.join(sh.lines)
         assert any(word in t for _, _, items in sh.info['groups'] for t in items)
         assert not [a for p in s.plans() for a in p.plan.spec['areas'] if a['style'] == 'zone']         # and none is faked as an area
+
+
+def test_the_floor_above_shows_the_well_shaded_and_railed_where_no_wall_is():
+    """Past the zigzag is no floor. The cottage's flight runs down the west
+    wall of the landing: the well is shaded, and the balustrade is on its
+    open side and its foot, not along the wall and not across the head."""
+    import os
+    from flawlessplan.solve import solve
+    from flawlessplan.workspace import EXAMPLES
+    house = solve(os.path.join(EXAMPLES, 'cottage'))
+    up, down = house.sheet('first').stairs[0], house.sheet('ground').stairs[0]
+    assert down['void'] is None and down['rail'] == []
+    assert up['void'].area > 0.5 and up['void'].intersection(house.sheet('first').plan.solid).area < 1e-6
+    assert up['block'].intersection(up['void']).area < 0.05
+    (run,) = up['rail']
+    xs, ys = [p[0] for p in run], [p[1] for p in run]
+    whole = up['block'].union(up['void']).bounds
+    assert abs(max(xs) - whole[2]) < 0.05 and abs(max(ys) - whole[3]) < 0.05      # the east side and the foot
+    assert min(ys) > whole[1] - 0.05 and not any(abs(a[1] - whole[1]) < 0.01 and abs(b[1] - whole[1]) < 0.01
+                                                 for a, b in zip(run, run[1:]))    # nothing across the head
+    drawn = house.sheet('first').svg()
+    assert 'class="well"' in drawn and 'class="rail"' in drawn

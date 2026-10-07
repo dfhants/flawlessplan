@@ -211,7 +211,11 @@ corner a landing or winders. Counting along it every tread is one riser, a
 landing one, n winders n, plus the last riser onto the floor above. A sheet
 shows the stair up to `cut_risers`; the level above shows the rest with
 `{ref: ground.main, show: above}`, so between them the flight appears
-exactly once. The cut end is the zigzag itself.
+exactly once. The cut end is the zigzag itself. On the level above, what
+is past the zigzag is the well and not floor: `stairs.well` shades it as far
+as no wall of that floor stands over it (`void`) and draws a balustrade
+(`rail`) along every edge of the well that is against no wall, but for the
+head. Neither is written in a house file.
 
 **Parts** Sheets that share half a house share it through `parts`, so they
 cannot drift apart. Split a part where several sheets will need one half

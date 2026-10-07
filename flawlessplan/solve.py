@@ -82,6 +82,8 @@ class Sheet(object):
             self.names.update(base_gross=base.plan.gross, gained=plan.gross - base.plan.gross)
         self.scope = house['scope'].child(**self.names)
         self.stairs = [stairs.build(st) for st in fl['stairs']]
+        for g in self.stairs:
+            g['void'], g['rail'] = stairs.well(g, plan.solid)
         self.labels = self._place()
         self.info = report.info(plan, self.scope)
         self._drawn = None
@@ -90,7 +92,7 @@ class Sheet(object):
         """Each room's label as (items, x, y), in the plan's room order."""
         plan, fl = self.plan, self.plan.spec
         blocks = [Polygon(a['pts']) for a in fl['areas'] if a['style'] == 'fitting']
-        blocks += [g['block'] for g in self.stairs if g['block'] is not None]
+        blocks += [g[k] for g in self.stairs for k in ('block', 'void') if g[k] is not None]
         blocks += [f['floor'] for f in plan.fittings]
         for r in plan.rooflights:
             blocks.append(r['shape'])

@@ -168,9 +168,11 @@ def markup(title, sheets, root=None, send=None, hidden=(), version=None):
              'CSS': asset('page.css').replace('__DRAWING__', render.css(VARS, 'svg.draw')),
              'JS': _fill(asset('page.js'), js),
              'ICON': icon(root), 'FONTS': fonts(root), 'HOME': home, 'SEND': send}
+    # the template is its head — title, icon, faces, styles — then a blank line, then its body
+    head, body = _fill(asset('page.html'), parts).split('\n\n<header', 1)
     return ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
-            '</head>\n<body>\n' + _fill(asset('page.html'), parts) + '\n</body>\n</html>\n')
+            + head + '\n</head>\n<body>\n<header' + body + '\n</body>\n</html>\n')
 
 
 def share(title, sheets):

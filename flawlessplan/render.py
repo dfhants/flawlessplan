@@ -38,6 +38,8 @@ STYLE = """
 .swing{fill:none;stroke:RED;stroke-width:4;stroke-dasharray:10 7}
 .fold{fill:none;stroke:INK;stroke-width:6}
 .stair{fill:FIT;stroke:SOFT;stroke-width:4}
+.well{fill:SOFT;fill-opacity:.3;stroke:none}
+.rail{fill:none;stroke:INK;stroke-width:5;stroke-linejoin:miter}
 .edge{fill:none;stroke:SOFT;stroke-width:4}
 .stairline{stroke:SOFT;stroke-width:3}
 .arrow{fill:none;stroke:SOFT;stroke-width:5}
@@ -163,6 +165,8 @@ def draw(sheet):
         sh.out('<path d="%s" class="zone"/>' % geom_path(z['face'].buffer(-ZONE_IN, join_style=2)))
 
     for g in sheet.stairs:
+        if g['void'] is not None:                   # the well the rest of the flight is in: not floor
+            sh.out('<path d="%s" class="well"/>' % geom_path(g['void']))
         for p in g['polys']:
             sh.out('<path d="%s" class="stair"/>' % path(p))
         for a, b in g['lines']:
@@ -177,6 +181,8 @@ def draw(sheet):
             sh.out('<path d="%s" class="arrowhead"/>' % path(pts))
         if g['label'][1]:
             sh.text(g['label'][0], g['label'][1], 'rmarea sm')
+        for pts in g['rail']:                       # the balustrade, over the stair's own edge
+            sh.out('<path d="%s" class="rail"/>' % path(pts, close=False))
 
     for o in plan.openings:
         h = o['host']

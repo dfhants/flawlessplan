@@ -3,6 +3,9 @@
   "configurations": [
     { "name": "flawlessplan", "runtimeExecutable": "python3",
       "runtimeArgs": ["build.py", "--serve"],
-      "port": 8765 }
+      "port": 8765 },
+    { "name": "site", "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8766", "--directory", "../flawlessplan-site/public"],
+      "port": 8766 }
   ]
 }
