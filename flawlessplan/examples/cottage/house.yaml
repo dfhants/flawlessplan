@@ -28,9 +28,10 @@ sheets:
       - {name: HALL, at: [5.0, 1.5], size: small}
       - {name: KITCHEN, at: [7.3, 3.75]}
     stairs:
-      # straight up the west side of the hall: 13 risers of 200 mm
+      # straight up the west side of the hall: 13 risers of 200 mm. Its foot is under the north
+      # face of the bathroom wall above, so the well on the landing ends at that wall
       - id: main
-        path: [[4.0, 5.0], [4.0, 2.3]]
+        path: [[4.0, 5.15], [4.0, 2.45]]
         width: 0.9
         treads: 12
         cut_risers: 6

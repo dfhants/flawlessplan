@@ -22,7 +22,7 @@ every edge of the well that is against no wall, but for the head, where the
 stair is stepped onto. Both are worked out against the sheet's walls (`well`).
 """
 import math
-from shapely.geometry import Polygon, LineString
+from shapely.geometry import Polygon, LineString, Point
 from shapely.ops import unary_union, linemerge
 
 BREAK_AMP = 0.075        # how far the zigzag swings either side of the cut
@@ -213,5 +213,16 @@ def well(g, solid):
     edge = edge.difference(LineString(g['top']).buffer(2*GRIP, cap_style=2))
     if edge.geom_type == 'MultiLineString':
         edge = linemerge(edge)
-    runs = [r for r in getattr(edge, 'geoms', [edge]) if r.geom_type == 'LineString']
-    return void, [list(r.coords) for r in runs if r.length > SHORT]
+    out = []
+    for r in getattr(edge, 'geoms', [edge]):
+        if r.geom_type != 'LineString' or r.length <= SHORT:
+            continue
+        pts = list(r.coords)
+        for end, nxt in ((0, 1), (-1, -2)):         # an end that stopped just short of a wall runs on to it
+            gap = solid.distance(Point(pts[end]))
+            d = (pts[end][0]-pts[nxt][0], pts[end][1]-pts[nxt][1])
+            ln = math.hypot(*d)
+            if 1e-9 < gap < 4*GRIP and ln > 1e-9:
+                pts[end] = _add(pts[end], d, gap/ln)
+        out.append(pts)
+    return void, out
