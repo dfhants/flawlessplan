@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "flawlessplan"
-version = "0.8.3"
+version = "0.8.4"
 description = "Floor plans made and changed by talking to Claude: from a sketch, a photo or your own measurements, drawn to scale and redrawn as you ask."
 readme = "README.md"
 license = "PolyForm-Noncommercial-1.0.0"
