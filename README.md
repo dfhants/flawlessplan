@@ -97,7 +97,7 @@ empty one, and adds the tools. Then ask Claude to "show my houses".
 ### On its own, from a terminal
 
 ```
-uv tool install git+https://github.com/dfhants/flawlessplan@v0.8.2
+uv tool install git+https://github.com/dfhants/flawlessplan@v0.8.3
 flawlessplan init my-houses         # a workspace, with two example houses
 cd my-houses
 flawlessplan build --serve          # draw them and open http://localhost:8765
