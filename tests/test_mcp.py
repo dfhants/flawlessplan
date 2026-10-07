@@ -216,11 +216,13 @@ def test_a_house_file_that_does_not_solve_is_not_kept(houses):
     assert mcp.read_house('cottage')['text'] == before
 
 
-def test_the_guide_and_the_readme_say_the_same_of_a_house_file():
-    """The keys are written in the README and carried in the package for
-    the guide tool; they are held to each other here."""
+def test_the_readme_points_to_what_the_guide_says_of_a_house_file():
+    """The keys are written once, in the package, where the guide tool
+    reads them; the README and the reference send a reader there."""
     from flawlessplan.page import ASSETS
-    assert open(os.path.join(ASSETS, 'house-file.md')).read().strip() in open(os.path.join(ROOT, 'README.md')).read()
+    assert os.path.exists(os.path.join(ASSETS, 'house-file.md'))
+    for doc, link in (('README.md', '(flawlessplan/assets/house-file.md)'), ('docs/reference.md', '(../flawlessplan/assets/house-file.md)')):
+        assert link in open(os.path.join(ROOT, doc)).read(), doc
 
 
 TRACED = """survey:

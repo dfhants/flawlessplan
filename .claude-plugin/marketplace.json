@@ -7,10 +7,10 @@
     {
       "name": "flawlessplan",
       "source": "./plugin",
-      "description": "Draw, check and correct floor plans from a house file, with Claude reading what you mark on them."
+      "description": "Floor plans made and changed in conversation: Claude draws a house to scale from a sketch, a photo or your measurements, and changes it as you say or as you mark on the plan."
     }
   ],
   "metadata": {
-    "description": "Flawlessplan: floor plans drawn from a house file."
+    "description": "Flawlessplan: floor plans made and changed by talking to Claude."
   }
 }

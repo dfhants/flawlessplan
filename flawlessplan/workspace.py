@@ -36,7 +36,7 @@ openings and rooms. Every room size is measured from the geometry.
 - Only `public/` (from `flawlessplan build --public`) is for hosting. A
   house marked `private: true` is left out of it.
 
-The schema is in the flawlessplan README. The same things are tools for an
+The schema is what the `guide` tool gives. The same things are tools for an
 agent through `flawlessplan mcp`, which `.mcp.json` here registers.
 """
 

@@ -1,7 +1,7 @@
 {
   "name": "flawlessplan",
   "version": "0.8.0",
-  "description": "Floor plans drawn from a house file: tools to draw, check and query plans, and the procedures for starting a house and reading what its owner drew on it.",
+  "description": "Floor plans made and changed in conversation: tools for Claude to draw a house to scale from a sketch, a photo or measurements, show it on a page you can mark up, and change it as you ask.",
   "author": {
     "name": "dfhants",
     "url": "https://github.com/dfhants"

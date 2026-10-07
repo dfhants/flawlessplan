@@ -334,10 +334,9 @@ def test_every_kind_has_a_usual_size_and_a_symbol_inside_it(kind):
     assert (f['kind'], f['w'], f['d']) == (kind, w, d) and not said(p)
 
 
-def test_the_kinds_in_the_readme_are_the_kinds_there_are():
-    import os
-    from conftest import ROOT
-    row = [ln for ln in open(os.path.join(ROOT, 'README.md')).read().split('\n') if ln.startswith('| `fittings` |')][0]
+def test_the_kinds_in_the_guide_are_the_kinds_there_are():
+    from flawlessplan import page
+    row = [ln for ln in page.asset('house-file.md').split('\n') if ln.startswith('| `fittings` |')][0]
     for kind in fittings.KINDS:
         assert '`%s`' % kind in row, kind
     assert set(fittings.ORDER) <= set(fittings.KINDS) and set(fittings.LETTER) <= set(fittings.KINDS)

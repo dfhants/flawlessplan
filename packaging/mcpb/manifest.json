@@ -3,8 +3,8 @@
   "name": "flawlessplan",
   "display_name": "Flawlessplan",
   "version": "0.8.0",
-  "description": "Floor plans drawn from a house file: named measurements in, measured drawings and checks out.",
-  "long_description": "Describe a house as named measurements, walls, openings and rooms, and Claude draws it to scale, measures every room from the geometry and reports what is wrong. Proposals are drawn against the house as built. Plans open as pages you can draw and write on; Claude reads what you marked.",
+  "description": "Floor plans made and changed by talking to Claude, from a sketch, a photo or your own measurements.",
+  "long_description": "Give Claude a sketch, a photo of a plan or the measurements you took, and it draws the house to scale, a sheet for every floor. The plan opens as a page you can draw and write on: say what should change or mark it on the plan — a wall out, a door moved, an extension on — and Claude redraws it. Proposals are drawn against the house as built, every room is measured from the drawing, and one file holds the whole plan to send to someone else. For working a design out; not construction drawings.",
   "author": {
     "name": "dfhants",
     "url": "https://github.com/dfhants"

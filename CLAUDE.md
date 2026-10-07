@@ -1,6 +1,7 @@
 # Working in this repo
 
-Flawlessplan: floor plans drawn from a house file. `flawlessplan/` is the
+Flawlessplan: floor plans made and changed by talking to Claude, drawn from
+a house file. `flawlessplan/` is the
 engine: it reads a YAML description of a house and emits one SVG per sheet,
 PNGs, a report and a markup page. `houses/` holds the houses, a folder each. The README has
 the schema. Nothing in the engine knows about any one house.
@@ -63,6 +64,9 @@ plugin/                  the Claude Code plugin: the tools (run from this repo b
 packaging/release.py     sets the version everywhere it is repeated, and prints the steps to release it
 ../flawlessplan-site/    the website, its own repository: its `build.py` makes it from this one as it stands
 packaging/mcpb/          the Claude Desktop extension: manifest, entry point, `build.py` -> dist/flawlessplan.mcpb
+README.md                what it is for and how a plan is made with it: the workflow first. What is
+                         technical goes in docs/reference.md, not here
+docs/reference.md        the workspace, the commands, the page, marks, sharing, hosting, the agent tools
 pyproject.toml           the package: `flawlessplan` on the command line
 houses/<name>/           this workspace's houses: house.yaml; expected.json (what the tests hold it to);
                          marks.json (what was drawn on its page; not in git);
@@ -354,8 +358,9 @@ the house file — those tools make them and guess nothing; a file that does
 not solve is put back.
 
 `guide` is `assets/new-house.md` (the procedure, written once: the
-`new-house` skill only points to it), `assets/house-file.md` (the README's
-"A house file", held to it by a test — change both) and the examples.
+`new-house` skill only points to it), `assets/house-file.md` (every key of
+a house file, written once: the README and `docs/reference.md` link to it)
+and the examples.
 
 ## Gotchas
 
