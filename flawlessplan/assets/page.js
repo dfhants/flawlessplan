@@ -260,7 +260,7 @@ __VIEW__
       pane[k].ghost.appendChild(el("polyline",{points:drag.pts.map(function(q){return (q[0]*U)+","+(q[1]*U);}).join(" "),"class":"mk-pen"}));
     });
     svg.addEventListener("pointerup",function(ev){
-      if(pan){ pan=null; svg.style.cursor=CURSOR[tool]||"crosshair"; return; }
+      if(pan){ pan=null; svg.style.cursor=CURSOR[tool]||""; return; }
       if(press){
         var still=Math.abs(ev.clientX-press.x)<6&&Math.abs(ev.clientY-press.y)<6, p=toSvg(k,ev);
         press=null;
@@ -294,7 +294,7 @@ __VIEW__
       var is=b.getAttribute("data-tool")===t;
       b.setAttribute("aria-checked",is?"true":"false"); b.tabIndex=is?0:-1;
     });
-    KEYS.forEach(function(k){ pane[k].svg.style.cursor=CURSOR[t]||"crosshair"; });
+    KEYS.forEach(function(k){ pane[k].svg.style.cursor=CURSOR[t]||""; });
   }
   function menu(open){
     if(menuEl.hidden===!open) return;
