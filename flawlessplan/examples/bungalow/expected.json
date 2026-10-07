@@ -1,0 +1,243 @@
+{
+ "house": "Bungalow",
+ "sheets": {
+  "ground": {
+   "gross": 76.0,
+   "internal": 64.36,
+   "rooms": [
+    {
+     "name": "LIVING",
+     "w": 5.2,
+     "h": 5.4,
+     "area": 28.08,
+     "shape": "rect"
+    },
+    {
+     "name": "KITCHEN",
+     "w": 4.1,
+     "h": 5.4,
+     "area": 22.14,
+     "shape": "rect"
+    },
+    {
+     "name": "BEDROOM",
+     "w": 3.4,
+     "h": 3.7,
+     "area": 12.58,
+     "shape": "rect"
+    }
+   ],
+   "zones": [],
+   "openings": [
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "north",
+     "width": 0.918,
+     "centre": [
+      6.55,
+      0.15
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "north",
+     "width": 1.8,
+     "centre": [
+      2.9,
+      0.15
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "east",
+     "width": 1.2,
+     "centre": [
+      9.85,
+      3.0
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "east",
+     "width": 1.2,
+     "centre": [
+      9.85,
+      8.0
+     ]
+    },
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "living_kitchen",
+     "width": 0.842,
+     "centre": [
+      5.55,
+      5.079
+     ]
+    },
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "kitchen_bedroom",
+     "width": 0.842,
+     "centre": [
+      8.0,
+      5.85
+     ]
+    },
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "south",
+     "width": 1.766,
+     "centre": [
+      3.0,
+      5.85
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "wing_w",
+     "width": 1.2,
+     "centre": [
+      6.15,
+      8.0
+     ]
+    }
+   ],
+   "issues": []
+  },
+  "infill": {
+   "gross": 94.0,
+   "internal": 82.36,
+   "rooms": [
+    {
+     "name": "LIVING",
+     "w": 5.2,
+     "h": 5.698,
+     "area": 29.63,
+     "shape": "rect"
+    },
+    {
+     "name": "KITCHEN",
+     "w": 4.1,
+     "h": 5.4,
+     "area": 22.14,
+     "shape": "rect"
+    },
+    {
+     "name": "BEDROOM",
+     "w": 3.4,
+     "h": 3.7,
+     "area": 12.58,
+     "shape": "rect"
+    },
+    {
+     "id": "GARDEN",
+     "name": "GARDEN ROOM",
+     "w": 5.7,
+     "h": 2.7,
+     "area": 15.38,
+     "shape": "rect"
+    }
+   ],
+   "zones": [
+    {
+     "name": "GARDEN ROOM",
+     "rooms": [
+      "GARDEN ROOM"
+     ],
+     "area": 15.38
+    }
+   ],
+   "openings": [
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "north",
+     "width": 0.918,
+     "centre": [
+      6.55,
+      0.15
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "north",
+     "width": 1.8,
+     "centre": [
+      2.9,
+      0.15
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "east",
+     "width": 1.2,
+     "centre": [
+      9.85,
+      3.0
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "east",
+     "width": 1.2,
+     "centre": [
+      9.85,
+      8.0
+     ]
+    },
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "living_kitchen",
+     "width": 0.842,
+     "centre": [
+      5.55,
+      5.079
+     ]
+    },
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "kitchen_bedroom",
+     "width": 0.842,
+     "centre": [
+      8.0,
+      5.85
+     ]
+    },
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "wing_old",
+     "width": 0.842,
+     "centre": [
+      6.15,
+      7.5
+     ]
+    },
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "infill_s",
+     "width": 1.766,
+     "centre": [
+      3.0,
+      8.85
+     ]
+    }
+   ],
+   "issues": []
+  }
+ }
+}

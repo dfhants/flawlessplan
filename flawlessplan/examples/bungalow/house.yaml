@@ -1,0 +1,108 @@
+# An L-plan bungalow and a proposal to fill in the corner of the L. One
+# level, two sheets: the second `changes` the first, so the wall that comes
+# out, the floor gained and the figures in the notes are all worked out.
+# x runs east, y runs south; the road is to the north.
+
+house:
+  name: Bungalow
+  front: north
+
+survey:
+  main_w: 10.0              # the main range, outside, west-east
+  main_d: 6.0               # ... and north-south
+  wing_w: 4.0               # the wing at its east end
+  wing_d: 4.0               # ... running on south
+  living_w: 5.2             # clear, taped
+  infill_d: {value: 3.0, status: assumed}    # how far south the proposal fills the corner
+  light_w: {value: 0.9, status: assumed}     # the rooflight in its roof, west-east
+  light_d: {value: 1.2, status: assumed}     # ... and north-south
+
+lines:
+  HW: IW/2
+  LIVING_E: EW + living_w + HW          # living / kitchen
+  WING_W: main_w - wing_w               # the wing's west face
+  YS: main_d                            # the main range's south face
+  YW: main_d + wing_d                   # the wing's
+  YI: YS + infill_d                     # the infill's south face
+
+parts:
+  # what both sheets share: the main range's rooms and the wing
+  rooms_kept:
+    walls:
+      - {id: living_kitchen, from: [LIVING_E, 0], to: [LIVING_E, YS]}
+      # the main range's old end wall, from the corner the living room's wall stands on
+      - {id: kitchen_bedroom, from: [LIVING_E - HW, YS - EW/2], to: [main_w, YS - EW/2], t: EW}
+    openings:
+      - {door: wide, wall: north, at: [LIVING_E + 1.0, 0], hinge: w, swing: in}
+      - {window: 1.8, wall: north, at: [EW + living_w/2, 0]}
+      - {window: 1.2, wall: east, at: [main_w, YS/2]}
+      - {window: 1.2, wall: east, at: [main_w, YS + wing_d/2]}
+      - {door: std, wall: living_kitchen, at: {from_end: 0.5}, hinge: s, swing: e}
+      - {door: std, wall: kitchen_bedroom, at: [(WING_W + main_w)/2, YS], hinge: w, swing: s}
+    rooms:
+      - {name: LIVING, at: [EW + living_w/2, YS/2]}
+      - {name: KITCHEN, at: [(LIVING_E + main_w)/2, 2.0]}
+      - {name: BEDROOM, at: [(WING_W + main_w)/2, YS + wing_d/2], size: small}
+
+levels: [ground]
+
+sheets:
+  - id: ground
+    title: AS BUILT
+    scheme: as-built
+    use: [rooms_kept]
+    envelope:
+      - {at: [0, 0], id: north}
+      - {at: [main_w, 0], id: east}
+      - {at: [main_w, YW], id: wing_s}
+      - {at: [WING_W, YW], id: wing_w}
+      - {at: [WING_W, YS], id: south}
+      - {at: [0, YS], id: west}
+    openings:
+      - {door: wide, pair: true, wall: south, at: centre, swing: out}     # onto the patio
+      - {window: 1.2, wall: wing_w, at: centre}
+    areas:
+      - {rect: [[0, YS], [WING_W, YW]], style: outdoor, label: PATIO, sub: paved}
+    notes:
+      summary: The bungalow as it stands.
+      unconfirmed:
+        - Only the living room was taped; the rest is off the outside figures.
+
+  - id: infill
+    title: PROPOSED
+    level: ground
+    scheme: infill
+    changes: ground
+    use: [rooms_kept]
+    envelope:
+      - {at: [0, 0], id: north}
+      - {at: [main_w, 0], id: east}
+      - {at: [main_w, YW], id: wing_s}
+      - {at: [WING_W, YW], id: wing_w}
+      - {at: [WING_W, YI], id: infill_s}
+      - {at: [0, YI], id: west}
+    walls:
+      # the wing's old outside wall, now inside, with a way through
+      - {id: wing_old, from: [WING_W + EW/2, YS], to: [WING_W + EW/2, YI], t: EW}
+    openings:
+      - {door: std, wall: wing_old, at: centre, hinge: n, swing: w}
+      - {door: wide, pair: true, wall: infill_s, at: centre, swing: out}
+    dividers:
+      - {from: [EW, YS], to: [LIVING_E, YS]}          # the living room stops where its wall was
+    rooms:
+      - {name: GARDEN ROOM, id: GARDEN, at: [WING_W/2, (YS + YI)/2], zone: true, sub: not laid out}
+    rooflights:
+      # one in the flat roof, towards the west end: its middle, then east-west and north-south
+      - {id: rooflight, at: [WING_W/6, YS + infill_d/2], w: light_w, h: light_d}
+    require:
+      - that: YI < YW
+        message: "the infill runs {YI - YW:.2f} m past the end of the wing"
+    notes:
+      summary: The corner of the L filled in as a garden room.
+      decided:
+        - "The infill adds {gained:.1f} m² to {base_gross:.1f} m², {gross:.1f} m² in all."
+      unconfirmed:
+        - "It is drawn {infill_d:.2f} m deep, which leaves {GARDEN_area:.1f} m² clear."
+        - "A rooflight of {light_w:.2f} × {light_d:.2f} m is drawn in its roof, {rooflight_area:.1f} m² of glass; its size and place are not agreed."
+      needs:
+        - A beam where the living room's south wall comes out.

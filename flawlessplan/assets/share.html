@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+__ICON__
+<script>document.documentElement.className="js"</script>
+<style>__CSS__</style>
+</head>
+<body>
+<header class="bar">
+  <h1 class="house">__TITLE__</h1>
+  <div class="tabs" role="tablist" aria-label="Sheets">
+__TABS__
+  </div>
+  <div class="zoomrow" role="group" aria-label="Zoom">
+    <button class="ib" id="zout" aria-label="Zoom out" aria-keyshortcuts="-" title="Zoom out · −">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg></button>
+    <span id="zoom" class="zoom" aria-live="off">100%</span>
+    <button class="ib" id="zin" aria-label="Zoom in" aria-keyshortcuts="+" title="Zoom in · +">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg></button>
+    <button class="ib word" id="zfit" aria-keyshortcuts="0" title="Whole sheet · 0">Fit</button>
+  </div>
+  <button id="notes" class="toggle" aria-label="Sheet notes" aria-expanded="true">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M15 4v16"/></svg>
+    <span>Sheet notes</span>
+  </button>
+</header>
+
+<main class="sheets">
+__SHEETS__
+</main>
+<script>__JS__</script>
+</body>
+</html>

@@ -1,0 +1,70 @@
+<title>__TITLE__</title>
+__ICON__
+__FONTS__
+<style>__CSS__</style>
+
+<header class="bar">
+__HOME__  <div class="tabs" role="tablist" aria-label="Sheets">
+__TABS__
+  </div>
+  <div class="sheetmenu" id="sheetwrap" hidden>
+    <button id="sheets" class="toggle" aria-haspopup="menu" aria-expanded="false" aria-controls="sheetmenu" title="Hide this sheet, or bring a hidden one back">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z"/><path d="M4 4l16 16"/></svg>
+      <span>Hidden</span><span class="n" id="nhidden" hidden></span>
+    </button>
+    <div class="menu card" id="sheetmenu" role="menu" aria-label="Sheets" hidden></div>
+  </div>
+__SEND__  <button id="notes" class="toggle" aria-label="Sheet notes" aria-expanded="true" aria-controls="infos">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M15 4v16"/></svg>
+    <span>Sheet notes</span>
+  </button>
+</header>
+
+<main class="work">
+  <div class="stages" id="stages">
+__STAGES__
+    <div class="palette card" role="toolbar" aria-label="Drawing" aria-orientation="vertical">
+      <div role="radiogroup" aria-label="Tool">
+        <button class="ib" data-tool="pen" role="radio" aria-checked="true" tabindex="0" aria-label="Draw" aria-keyshortcuts="D" data-tip="Draw · D">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1-4.5L16.5 4a2.1 2.1 0 0 1 3 3L8 18.5 4 20z"/><path d="M14.5 6l3 3"/></svg></button>
+        <button class="ib" data-tool="note" role="radio" aria-checked="false" tabindex="-1" aria-label="Text" aria-keyshortcuts="T" data-tip="Text: click the plan, then type · T">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7V5h14v2"/><path d="M12 5v14"/><path d="M9 19h6"/></svg></button>
+        <button class="ib" data-tool="pan" role="radio" aria-checked="false" tabindex="-1" aria-label="Pan" aria-keyshortcuts="H" data-tip="Pan · H, or hold Space">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18"/><path d="M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg></button>
+      </div>
+      <hr>
+      <button class="ib" id="undo" aria-label="Undo" aria-keyshortcuts="Control+Z Meta+Z" data-tip="Undo · ⌘Z" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 0 12h-3"/></svg></button>
+      <button class="ib" id="redo" aria-label="Redo" aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z" data-tip="Redo · ⇧⌘Z" disabled>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 0 0 0 12h3"/></svg></button>
+      <hr>
+      <div class="clearwrap">
+        <button class="ib" id="clear" aria-label="Clear marks" aria-haspopup="menu" aria-expanded="false" aria-controls="clearmenu" data-tip="Clear marks…" disabled>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M6 7l1 13h10l1-13"/><path d="M10 11v5M14 11v5"/></svg></button>
+        <div class="menu card" id="clearmenu" role="menu" aria-label="Clear marks" hidden>
+          <button id="clear-sheet" role="menuitem">Clear this sheet <span>0</span></button>
+          <button id="clear-all" role="menuitem">Clear every sheet <span>0</span></button>
+        </div>
+      </div>
+    </div>
+    <div class="zoomer card" role="group" aria-label="Zoom">
+      <button class="ib" id="zout" aria-label="Zoom out" aria-keyshortcuts="-" data-tip="Zoom out · −">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12"/></svg></button>
+      <span id="zoom" class="zoom" aria-live="off">100%</span>
+      <button class="ib" id="zin" aria-label="Zoom in" aria-keyshortcuts="+" data-tip="Zoom in · +">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg></button>
+      <hr>
+      <button class="ib word" id="zfit" aria-keyshortcuts="0" data-tip="Whole sheet · 0">Fit</button>
+    </div>
+  </div>
+  <div class="infos" id="infos">
+__INFOS__
+  </div>
+</main>
+
+<footer class="foot">
+  <span class="state"><span class="dot" id="dot"></span><span id="status" role="status" aria-live="polite">Connecting…</span></span>
+  <span id="count">0 marks</span>
+  <span id="pos">0.00, 0.00 m</span>
+</footer>
+<script>__JS__</script>

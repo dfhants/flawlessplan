@@ -1,0 +1,60 @@
+{
+  "manifest_version": "0.4",
+  "name": "flawlessplan",
+  "display_name": "Flawlessplan",
+  "version": "0.8.0",
+  "description": "Floor plans drawn from a house file: named measurements in, measured drawings and checks out.",
+  "long_description": "Describe a house as named measurements, walls, openings and rooms, and Claude draws it to scale, measures every room from the geometry and reports what is wrong. Proposals are drawn against the house as built. Plans open as pages you can draw and write on; Claude reads what you marked.",
+  "author": {
+    "name": "dfhants",
+    "url": "https://github.com/dfhants"
+  },
+  "icon": "icon.png",
+  "server": {
+    "type": "uv",
+    "entry_point": "server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${__dirname}",
+        "server.py"
+      ],
+      "env": {
+        "FLAWLESSPLAN_WORKSPACE": "${user_config.workspace}"
+      }
+    }
+  },
+  "user_config": {
+    "workspace": {
+      "type": "directory",
+      "title": "Houses folder",
+      "description": "Where your houses are kept and drawings go. An empty folder is given two example houses to start from.",
+      "required": true,
+      "default": "${HOME}/Documents/Flawlessplan"
+    }
+  },
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "python": ">=3.10"
+    }
+  },
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "homepage": "https://flawlessplan.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dfhants/flawlessplan"
+  },
+  "keywords": [
+    "floor plan",
+    "architecture",
+    "house",
+    "drawing"
+  ]
+}

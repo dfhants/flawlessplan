@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<style>
+.tile{fill:#EDF1EF}.floor{fill:#F8FAF9}.wall{fill:#131A18}.leaf{stroke:#131A18}.swing{stroke:#276A80}
+@media (prefers-color-scheme:dark){.tile{fill:#161D1A}.floor{fill:#232D29}.wall{fill:#E6EDE9}.leaf{stroke:#E6EDE9}.swing{stroke:#6FB6CA}}
+</style>
+<rect class="tile" width="64" height="64" rx="13"/>
+<rect class="floor" x="11" y="11" width="42" height="42"/>
+<path class="wall" fill-rule="evenodd" d="M11 11H53V53H11Z M18 18V46H46V18Z"/>
+<rect class="wall" x="18" y="27" width="15" height="5"/>
+<rect class="floor" x="29" y="46" width="14" height="7"/>
+<path class="swing" fill="none" stroke-width="3" stroke-linecap="round" d="M29 46A14 14 0 0 1 43 32"/>
+<path class="leaf" fill="none" stroke-width="3.5" stroke-linecap="round" d="M43 46V32"/>
+</svg>

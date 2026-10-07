@@ -1,0 +1,16 @@
+{
+  "name": "flawlessplan",
+  "owner": {
+    "name": "dfhants"
+  },
+  "plugins": [
+    {
+      "name": "flawlessplan",
+      "source": "./plugin",
+      "description": "Draw, check and correct floor plans from a house file, with Claude reading what you mark on them."
+    }
+  ],
+  "metadata": {
+    "description": "Flawlessplan: floor plans drawn from a house file."
+  }
+}

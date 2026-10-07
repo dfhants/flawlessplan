@@ -1,0 +1,224 @@
+{
+ "house": "Cottage",
+ "sheets": {
+  "ground": {
+   "gross": 67.5,
+   "internal": 57.96,
+   "rooms": [
+    {
+     "name": "LIVING",
+     "w": 3.15,
+     "h": 6.9,
+     "area": 21.74,
+     "shape": "rect"
+    },
+    {
+     "name": "HALL",
+     "w": 1.9,
+     "h": 6.9,
+     "area": 13.11,
+     "shape": "rect"
+    },
+    {
+     "name": "KITCHEN",
+     "w": 3.15,
+     "h": 6.9,
+     "area": 21.73,
+     "shape": "rect"
+    }
+   ],
+   "zones": [],
+   "openings": [
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "env.2",
+     "width": 0.918,
+     "centre": [
+      4.95,
+      7.35
+     ]
+    },
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "living_hall",
+     "width": 0.842,
+     "centre": [
+      3.5,
+      6.0
+     ]
+    },
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "hall_kitchen",
+     "width": 0.842,
+     "centre": [
+      5.5,
+      4.0
+     ]
+    },
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "env.0",
+     "width": 0.918,
+     "centre": [
+      7.3,
+      0.15
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "env.2",
+     "width": 1.5,
+     "centre": [
+      1.9,
+      7.35
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "env.3",
+     "width": 1.2,
+     "centre": [
+      0.15,
+      2.5
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "env.1",
+     "width": 1.5,
+     "centre": [
+      8.85,
+      3.75
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "env.0",
+     "width": 0.6,
+     "centre": [
+      4.5,
+      0.15
+     ]
+    }
+   ],
+   "issues": []
+  },
+  "first": {
+   "gross": 67.5,
+   "internal": 57.96,
+   "rooms": [
+    {
+     "name": "BEDROOM 1",
+     "w": 3.15,
+     "h": 6.9,
+     "area": 21.74,
+     "shape": "rect"
+    },
+    {
+     "name": "LANDING",
+     "w": 1.9,
+     "h": 4.85,
+     "area": 9.22,
+     "shape": "rect"
+    },
+    {
+     "name": "BATH",
+     "w": 1.9,
+     "h": 1.95,
+     "area": 3.71,
+     "shape": "rect"
+    },
+    {
+     "name": "BEDROOM 2",
+     "w": 3.15,
+     "h": 6.9,
+     "area": 21.73,
+     "shape": "rect"
+    }
+   ],
+   "zones": [],
+   "openings": [
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "bed1_landing",
+     "width": 0.842,
+     "centre": [
+      3.5,
+      1.3
+     ]
+    },
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "landing_bed2",
+     "width": 0.842,
+     "centre": [
+      5.5,
+      1.3
+     ]
+    },
+    {
+     "kind": "door",
+     "style": "swing",
+     "wall": "bath_n",
+     "width": 0.842,
+     "centre": [
+      4.97,
+      5.2
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "env.2",
+     "width": 1.5,
+     "centre": [
+      1.9,
+      7.35
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "env.2",
+     "width": 1.5,
+     "centre": [
+      7.3,
+      7.35
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "env.2",
+     "width": 0.6,
+     "centre": [
+      4.5,
+      7.35
+     ]
+    },
+    {
+     "kind": "window",
+     "style": "window",
+     "wall": "env.0",
+     "width": 0.6,
+     "centre": [
+      4.5,
+      0.15
+     ]
+    }
+   ],
+   "issues": []
+  }
+ }
+}

@@ -1,0 +1,12 @@
+build/
+dist/
+public/
+.vercel/
+__pycache__/
+.DS_Store
+
+.venv/
+.claude/worktrees/
+houses/*/marks.json
+flawlessplan/examples/*/marks.json
+*.marks.json

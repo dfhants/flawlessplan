@@ -1,0 +1,8 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "flawlessplan", "runtimeExecutable": "python3",
+      "runtimeArgs": ["build.py", "--serve"],
+      "port": 8765 }
+  ]
+}

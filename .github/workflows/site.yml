@@ -1,0 +1,14 @@
+name: site
+# A release is what the website shows: tell its repository to build itself
+# again from this one.
+on:
+  release:
+    types: [published]
+permissions: {}
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - run: gh api repos/dfhants/flawlessplan-site/dispatches -f event_type=engine-release
+        env:
+          GH_TOKEN: ${{ secrets.REPOS_TOKEN }}

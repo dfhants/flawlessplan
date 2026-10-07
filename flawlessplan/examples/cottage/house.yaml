@@ -1,0 +1,70 @@
+# A plain two-storey cottage, written in plain numbers: no survey table, no
+# named lines. The smallest house file that has two levels and a stair.
+# x runs east, y runs south; the front door is on the south side.
+
+house:
+  name: Cottage
+  front: south
+
+levels: [ground, first]
+
+sheets:
+  - id: ground
+    envelope: [[0, 0], [9, 0], [9, 7.5], [0, 7.5]]      # outer faces, 300 thick
+    walls:
+      - {id: living_hall, from: [3.5, 0], to: [3.5, 7.5]}
+      - {id: hall_kitchen, from: [5.5, 0], to: [5.5, 7.5]}
+    openings:
+      - {door: wide, at: [4.95, 7.5], hinge: e, swing: in}          # front door
+      - {door: std, wall: living_hall, at: [3.5, 6.0], hinge: s, swing: w}
+      - {door: std, wall: hall_kitchen, at: [5.5, 4.0], hinge: n, swing: e}
+      - {door: wide, at: [7.3, 0], hinge: w, swing: in}             # back door
+      - {window: 1.5, at: [1.9, 7.5]}
+      - {window: 1.2, at: [0, 2.5]}
+      - {window: 1.5, at: [9, 3.75]}
+      - {window: 0.6, at: [4.5, 0]}
+    rooms:
+      - {name: LIVING, at: [1.9, 3.75]}
+      - {name: HALL, at: [5.0, 1.5], size: small}
+      - {name: KITCHEN, at: [7.3, 3.75]}
+    stairs:
+      # straight up the west side of the hall: 13 risers of 200 mm
+      - id: main
+        path: [[4.0, 5.0], [4.0, 2.3]]
+        width: 0.9
+        treads: 12
+        cut_risers: 6
+        show: below
+    notes:
+      summary: The ground floor.
+      about:
+        - "The stair is 12 treads of 225 mm; {HALL_area:.1f} m² of hall round it."
+
+  - id: first
+    envelope: [[0, 0], [9, 0], [9, 7.5], [0, 7.5]]
+    walls:
+      - {id: bed1_landing, from: [3.5, 0], to: [3.5, 7.5]}
+      - {id: landing_bed2, from: [5.5, 0], to: [5.5, 7.5]}
+      - {id: bath_n, from: [3.5, 5.2], to: [5.5, 5.2]}
+    openings:
+      - {door: std, wall: bed1_landing, at: [3.5, 1.3], hinge: n, swing: w}
+      - {door: std, wall: landing_bed2, at: [5.5, 1.3], hinge: n, swing: e}
+      - {door: std, wall: bath_n, at: [4.97, 5.2], hinge: e, swing: s}
+      - {window: 1.5, at: [1.9, 7.5]}
+      - {window: 1.5, at: [7.3, 7.5]}
+      - {window: 0.6, at: [4.5, 7.5]}
+      - {window: 0.6, at: [4.5, 0]}
+    rooms:
+      - {name: BEDROOM 1, at: [1.9, 3.75]}
+      - {name: LANDING, at: [5.0, 1.0], size: small, dims: false}
+      - {name: BATH, at: [4.5, 6.3], size: small}
+      - {name: BEDROOM 2, at: [7.3, 3.75]}
+    stairs:
+      - {ref: ground.main, show: above, label: DN}
+    rooflights:
+      # over the landing, beside the stair: its middle, and how far it runs east-west and north-south
+      - {id: stair_light, at: [4.95, 3.0], w: 0.78, h: 0.98, label: RL}
+    notes:
+      summary: The first floor, over the same outline.
+      about:
+        - "A {stair_light_w:.2f} × {stair_light_h:.2f} m rooflight lights the landing and the stair."

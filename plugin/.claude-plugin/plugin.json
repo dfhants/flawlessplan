@@ -1,0 +1,33 @@
+{
+  "name": "flawlessplan",
+  "version": "0.8.0",
+  "description": "Floor plans drawn from a house file: tools to draw, check and query plans, and the procedures for starting a house and reading what its owner drew on it.",
+  "author": {
+    "name": "dfhants",
+    "url": "https://github.com/dfhants"
+  },
+  "homepage": "https://flawlessplan.app",
+  "repository": "https://github.com/dfhants/flawlessplan",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "keywords": [
+    "floor plan",
+    "architecture",
+    "house",
+    "drawing",
+    "svg"
+  ],
+  "mcpServers": {
+    "flawlessplan": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/dfhants/flawlessplan@v0.8.0",
+        "flawlessplan",
+        "mcp"
+      ],
+      "env": {
+        "FLAWLESSPLAN_WORKSPACE": "${CLAUDE_PROJECT_DIR}"
+      }
+    }
+  }
+}
