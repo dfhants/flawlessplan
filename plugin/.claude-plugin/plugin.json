@@ -1,6 +1,6 @@
 {
   "name": "flawlessplan",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Floor plans made and changed in conversation: tools for Claude to draw a house to scale from a sketch, a photo or measurements, show it on a page you can mark up, and change it as you ask.",
   "author": {
     "name": "dfhants",
@@ -21,7 +21,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/dfhants/flawlessplan@v0.8.1",
+        "git+https://github.com/dfhants/flawlessplan@v0.8.2",
         "flawlessplan",
         "mcp"
       ],
