@@ -139,7 +139,8 @@ __VIEW__
     });
   }
   function clearGhost(){ KEYS.forEach(function(k){ var g=pane[k].ghost;
-    while(g.firstChild)g.removeChild(g.firstChild); }); }
+    while(g.firstChild)g.removeChild(g.firstChild); });
+    if(editor) editor.at.appendChild(editor.dot); }      // but for the dot of a note being typed
 
   // Served by `flawlessplan serve`, the whole list is kept in houses/<house>/marks.json.
   // Saves go one after another, so the last list sent is the one that lands.
@@ -208,26 +209,32 @@ __VIEW__
     if(list.length) act([],list.slice(),"Cleared "+plural(list.length)+" on "+place+"; Undo brings them back.");
   }
 
-  // ---- text is typed where it goes: click the plan, type, Enter
+  // ---- text is typed where it goes: click the plan, type, Enter. The click
+  // leaves the note's dot there at once, and the field opens beside it, as
+  // the words will stand beside the dot.
   function openEditor(k,p,ev){
     closeEditor(true);
     var r=stagesEl.getBoundingClientRect(), W=220, H=34, inp=document.createElement("input");
     inp.type="text"; inp.maxLength=120; inp.className="note-edit";
     inp.placeholder="Type, then Enter"; inp.setAttribute("aria-label","Text to put on the plan here");
-    inp.style.left=Math.max(4,Math.min(r.width-W-4,ev.clientX-r.left))+"px";
+    var x=ev.clientX-r.left, G=14;
+    if(x+G+W>r.width-4) x-=G+W; else x+=G;       // on the other side of the dot where there is no room
+    inp.style.left=Math.max(4,x)+"px";
     inp.style.top=Math.max(4,Math.min(r.height-H-4,ev.clientY-r.top-H/2))+"px";
     inp.addEventListener("keydown",function(e){
       if(e.key==="Enter"){ e.preventDefault(); closeEditor(true); }
       else if(e.key==="Escape"){ e.preventDefault(); closeEditor(false); }
     });
     inp.addEventListener("blur",function(){ closeEditor(true); });
-    editor={el:inp,x:p.x,y:p.y};
+    editor={el:inp,x:p.x,y:p.y,at:pane[k].ghost,dot:el("circle",{cx:p.x*U,cy:p.y*U,r:9,"class":"mk-dot"})};
+    editor.at.appendChild(editor.dot);
     stagesEl.appendChild(inp); inp.focus();
   }
   function closeEditor(keep){
     var ed=editor; if(!ed) return;
     editor=null;                         // first: taking the field out blurs it, which comes back here
     var txt=ed.el.value.trim();
+    clearGhost();
     if(ed.el.parentNode) ed.el.parentNode.removeChild(ed.el);
     if(keep&&txt) add({type:"note",x:r2(ed.x),y:r2(ed.y),text:txt.slice(0,120)});
   }
