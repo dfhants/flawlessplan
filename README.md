@@ -131,15 +131,17 @@ things about it keep the drawing honest:
 - **It checks itself.** Every change is validated before it is kept, so
   Claude catches its own mistakes and tells you what does not add up.
 
-## What it does not do
+## Not yet
 
-- Construction or planning drawings: no sections, elevations, structure or
-  services.
+None of these is ruled out. They are not there today:
+
+- Sections, elevations, structure and services: what construction and
+  planning drawings need.
 - Furniture, and 3D.
 - Curved stairs and curved door leaves.
-- Read a picture by itself. Claude reads your photo or sketch and writes
-  the house from it; a plan taken from a photo is a set of good guesses
-  until someone measures a room.
+- Reading a picture with no agent. Today Claude reads your photo or sketch
+  and writes the house from it, and a plan taken from a photo is a set of
+  good guesses until someone measures a room.
 
 ## More
 
