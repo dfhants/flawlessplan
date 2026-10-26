@@ -381,7 +381,7 @@ def main(argv=None):
     w.add_argument('sheet')
     w.add_argument('where', nargs='+', type=float, metavar='N', help='X Y, X Y RADIUS or X0 Y0 X1 Y1')
     s = sub.add_parser('serve', help='serve build/ and save what is drawn on the pages')
-    s.add_argument('--port', type=int, default=8765)
+    s.add_argument('--port', type=int, help="default: the workspace's own, chosen once and kept")
     m = sub.add_parser('marks', help='lay out what was drawn on the pages: strokes in order, pictures')
     m.add_argument('house', nargs='+')
     m.add_argument('--all', action='store_true', help='the resolved marks too, in grey')

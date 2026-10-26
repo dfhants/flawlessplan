@@ -535,10 +535,21 @@ __VIEW__
   // ---- a page that is served follows its house: when the drawing in build/
   // is no longer the one this page was made from, it loads itself again, on
   // the sheet and at the view it had. Never under a stroke or a word half made.
-  var KEPT="flawlessplan:"+location.pathname, drawn=null;
+  var KEPT="flawlessplan:"+location.pathname, drawn=null, misses=0, lostEl=$("lost");
+  // two asks in a row unanswered and the server is gone: say so, until it answers again
+  function reached(ok){
+    misses=ok?0:misses+1;
+    var gone=misses>=2;
+    if(lostEl.hidden===!gone) return;
+    lostEl.hidden=!gone;
+    if(gone) status("Not connected — not saving","off");
+    else status("Connected again — marks are saved for Claude","on");
+    setView(active,pane[active].view);    // the banner takes room from the sheet
+  }
   function follow(){
     fetch("stamp",{cache:"no-store"}).then(function(r){ if(!r.ok) throw 0; return r.json(); })
       .then(function(now){
+        reached(true);
         if(!now) return;
         if(drawn===null){ drawn=now; return; }
         if(now===drawn||drag||pan||press||editor) return;
@@ -552,7 +563,7 @@ __VIEW__
         }
         try{ sessionStorage.setItem(KEPT,JSON.stringify({sheet:active,view:pane[active].view,done:showDone})); }catch(e){}
         saving.then(function(){ location.reload(); });
-      })["catch"](function(){});
+      })["catch"](function(){ reached(false); });
   }
   var kept=null;
   try{ kept=JSON.parse(sessionStorage.getItem(KEPT)); sessionStorage.removeItem(KEPT); }catch(e){}

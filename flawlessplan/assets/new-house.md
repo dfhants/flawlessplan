@@ -167,7 +167,10 @@ Before saying a house is done, read `check` once more and repeat every
 warning it still has to the owner as it stands. Do not sum up from memory
 how well the rooms match: the report is the summary.
 
-`show` gives the owner the address of its pages. Where there is a command
+`show` gives the owner the address of its pages. It stays the same from
+one session to the next. If a tool's answer ever says the page address has
+changed, tell the owner at once and `show` them the page again: what they
+draw at the old address is not saved. Where there is a command
 line, `flawlessplan snapshot <name>` writes `expected.json` beside the
 house; from then on `check` reports anything that moves from it. If the
 house has a story — an owner, decisions, things ruled out — it belongs in

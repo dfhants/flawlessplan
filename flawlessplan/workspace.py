@@ -11,6 +11,7 @@ $FLAWLESSPLAN_WORKSPACE, else the folder the command is run in. Nothing else
 in the engine knows where houses live, so a workspace that is not a folder
 on this machine — a signed-in user's storage, say — is a change here only.
 """
+import json
 import os
 import re
 import shutil
@@ -19,7 +20,9 @@ ENV = 'FLAWLESSPLAN_WORKSPACE'
 EXAMPLES = os.path.join(os.path.dirname(__file__), 'examples')
 NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]*\Z')     # \Z: `$` would let a name end in a newline
 
-GITIGNORE = 'build/\npublic/\n.vercel/\nhouses/*/marks.json\nhouses/*/.versions/\nhouses/*/house.draft.yaml\n.DS_Store\n'
+GITIGNORE = ('build/\npublic/\n.vercel/\nhouses/*/marks.json\nhouses/*/.versions/\nhouses/*/house.draft.yaml\n'
+             '.flawlessplan.json\n.DS_Store\n')
+CONFIG = '.flawlessplan.json'   # this machine's settings for a workspace: the port its pages are served on
 MCP = '{\n  "mcpServers": {\n    "flawlessplan": {"command": "flawlessplan", "args": ["mcp"]}\n  }\n}\n'
 GUIDE = """# Houses drawn with flawlessplan
 
@@ -34,7 +37,9 @@ openings and rooms. Every room size is measured from the geometry.
 - After any change run `flawlessplan check <name>` and read what it says;
   `flawlessplan build` draws every house into `build/`.
 - `flawlessplan build --serve` opens the pages, where plans can be drawn
-  on; `flawlessplan marks <name>` lays out what was drawn.
+  on; `flawlessplan marks <name>` lays out what was drawn. The pages keep
+  the same address: the port is chosen once and kept in
+  `.flawlessplan.json`. If it ever changes, tell the owner at once.
 - Only `public/` (from `flawlessplan build --public`) is for hosting. A
   house marked `private: true` is left out of it.
 
@@ -79,6 +84,27 @@ class Workspace(object):
 
     def marks(self, name):
         return os.path.join(self.houses, name, 'marks.json')
+
+    def settings(self):
+        """What this workspace keeps for itself on this machine: `port`, the
+        one its pages are served on, chosen once; `given`, the address last
+        given to the owner."""
+        try:
+            with open(os.path.join(self.root, CONFIG)) as fh:
+                got = json.load(fh)
+        except (OSError, ValueError):
+            return {}
+        return got if isinstance(got, dict) else {}
+
+    def remember(self, **kv):
+        """Keep settings, with the ones already kept."""
+        now = dict(self.settings(), **kv)
+        dest = os.path.join(self.root, CONFIG)
+        os.makedirs(self.root, exist_ok=True)
+        with open(dest + '.tmp', 'w') as fh:
+            json.dump(now, fh, indent=1)
+        os.replace(dest + '.tmp', dest)
+        return now
 
     def init(self, examples=True):
         """Make this folder a workspace, with the example houses to start
