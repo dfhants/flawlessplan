@@ -328,7 +328,8 @@ def test_every_kind_has_a_usual_size_and_a_symbol_inside_it(kind):
         assert parts[0][0] == 'fill' and {p[0] for p in parts} <= {'fill', 'line', 'text'}
         for part in parts:
             pts = [part[1]] if part[0] == 'text' else part[1]
-            assert all(-size[0]/2 - 1e-9 <= a <= size[0]/2 + 1e-9 and -1e-9 <= b <= size[1] + 1e-9 for a, b in pts), part
+            deep = size[1] + (0.6 if kind == 'fireplace' else 0)      # a hearth stands in front of its breast
+            assert all(-size[0]/2 - 1e-9 <= a <= size[0]/2 + 1e-9 and -1e-9 <= b <= deep + 1e-9 for a, b in pts), part
             assert part[0] != 'line' or part[2] in (True, False)
     f, p = one('{%s: true, wall: south%s}' % (kind, ', at: {from_start: 0.5}'))
     assert (f['kind'], f['w'], f['d']) == (kind, w, d) and not said(p)
@@ -421,6 +422,61 @@ def test_a_worktop_is_drawn_under_what_sits_in_it():
     assert len(fills) == 4 and 'M 30 30 L 330 30' in fills[0]                    # the worktop first, whatever order they were written in
     assert 'M 220 30' in fills[1] and svg.count('class="fitline"') == 4 + 1 + 4  # then the oven; sink, oven and hob lines
     assert not [i for i in sh.issues if i[0] != 'info']                          # a sink in a worktop is not a fault
+
+
+def bowls(parts):
+    """A sink's bowls, as (from, to) along its back, and its drainer grooves' places."""
+    lines = [p for p in parts if p[0] == 'line']
+    return ([(round(min(a for a, _ in p[1]), 3), round(max(a for a, _ in p[1]), 3)) for p in lines if p[2]],
+            [round(p[1][0][0], 3) for p in lines if not p[2]])
+
+
+def test_a_sink_keeps_its_bowls_and_drops_a_drainer_with_no_room():
+    one_, grooves = bowls(fittings.symbol('sink', 1.0, 0.5))
+    assert len(one_) == 1 and one_[0][0] == -0.45 and grooves and min(grooves) > one_[0][1]      # the drainer on the +a end
+    narrow, grooves = bowls(fittings.symbol('sink', 0.5, 0.5))
+    assert not grooves and narrow == [(-0.2, 0.2)]                                   # no drainer, and the bowl shrinks only to fit
+    b = fittings.symbol('sink', 0.5, 0.5)[1][1]
+    depth = max(y for _, y in b) - min(y for _, y in b)
+    assert (narrow[0][1] - narrow[0][0]) / depth == pytest.approx(fittings.BOWL)     # the bowl keeps its shape
+    two, grooves = bowls(fittings.symbol('sink', 1.5, 0.5, bowls=2, drain=(-1,)))
+    assert len(two) == 2 and max(grooves) < two[0][0] and two[-1][1] == 0.7
+    half, _ = bowls(fittings.symbol('sink', 1.2, 0.5, bowls=1.5))
+    assert half[1][1] - half[1][0] < (half[0][1] - half[0][0]) / 2                 # the half bowl beside the drainer
+    both, grooves = bowls(fittings.symbol('sink', 2.0, 0.5, drain=(-1, 1)))
+    assert min(grooves) < both[0][0] and max(grooves) > both[0][1]
+    _, grooves = bowls(fittings.symbol('sink', 1.1, 0.5, drain=(-1, 1)))
+    assert grooves and min(grooves) > 0                                             # one goes, not the bowl
+    assert not bowls(fittings.symbol('sink', 1.2, 0.5, drain=()))[1]
+
+
+@pytest.mark.parametrize('wall, drainer, side', [
+    ('north', 'left', -1), ('north', 'right', 1), ('south', 'left', 1), ('south', 'right', -1),
+])
+def test_a_drainer_is_on_the_left_or_right_of_someone_facing_the_sink(wall, drainer, side):
+    f, p = one('{sink: true, wall: %s, at: {from_start: 0.5}, drainer: %s}' % (wall, drainer))
+    end = geom._add(f['o'], f['u'], f['drain'][0])
+    assert (end[0] - f['o'][0]) * side > 0 and not said(p)                         # east is a positive x
+    assert one('{sink: true, wall: north, at: {from_start: 0.5}}')[0]['drain'] == (1,)
+
+
+@pytest.mark.parametrize('f, why', [
+    ('{bath: true, wall: north, bowls: 2}', 'only a sink has'),
+    ('{sink: true, wall: north, bowls: 3}', 'bowls: use 1, 1.5, 2'),
+    ('{sink: true, wall: north, drainer: up}', 'drainer: use none, left, right, both'),
+])
+def test_a_sink_says_what_it_can_be(f, why):
+    with pytest.raises(model.ConfigError) as e:
+        model.loads(fitted(f))
+    assert why in str(e.value)
+
+
+def test_a_door_that_swings_into_a_fitting_is_reported():
+    door = "    openings:\n      - {door: std, wall: split, at: [4, 1.2], swing: e, hinge: n}\n"
+    p, _ = plan(fitted('{sink: true, wall: north, at: [4.7, 0]}', door))
+    assert said(p, 'warn') == 'sheets.ground.openings[0]: the door in wall split swings into the sink at sheets.ground.fittings[0]'
+    p, _ = plan(fitted('{sink: true, wall: north, at: [6.2, 0]}', door))
+    assert not said(p)                                                              # clear of where it opens to
 
 
 def test_labels_keep_off_what_is_built_in():

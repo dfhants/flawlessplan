@@ -16,6 +16,7 @@ import os
 import re
 import threading
 from . import edit
+from .solve import solve
 from . import marks as ink
 from .workspace import Workspace
 
@@ -103,11 +104,32 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self.reply(400)
         with self.LOCK:
             try:                # a mark resolved since the page read them stays resolved
-                marks = ink.keep(ink.load(dest), marks)
+                stored = ink.load(dest)
+                marks = ink.keep(stored, marks)
             except ValueError:
-                pass
+                stored = []
+            self.place(os.path.dirname(dest), stored, marks)
             ink.save(dest, marks)
         self.reply(204)
+
+    def place(self, folder, stored, marks):
+        """A comment new to the store is given the house version it was
+        made on and what it is on, and that version of the house file is
+        kept, so the drawing it was made on can be set beside the drawing
+        as it is now. A house that does not solve gives none of it."""
+        if not any(isinstance(m, dict) and m.get('type') in ('note', 'box') and 'context' not in m for m in marks):
+            return
+        try:
+            path = os.path.join(folder, 'house.yaml')
+            with open(path) as fh:
+                text = fh.read()
+            version = edit.version(text)
+            solved = solve(path)
+        except (OSError, ValueError):
+            return
+        ink.attach(marks, stored, dict((p.id, p) for p in solved.plans()), version)
+        if any(isinstance(m, dict) and m.get('version') == version and m.get('type') in ('note', 'box') for m in marks):
+            ink.remember(folder, version, text)
 
     def do_POST(self):
         """What the page does to a house's sheets — their order, one

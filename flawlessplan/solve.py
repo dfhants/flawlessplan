@@ -6,6 +6,7 @@ the plan's geometry, its stairs, where every label goes, the names its
 notes may use, what is said beside it. The drawing, the report, the page,
 the marks brief and `at` all take a Sheet and work nothing out again.
 """
+import math
 import os
 from shapely.errors import ShapelyError
 from shapely.geometry import LineString, Polygon, box
@@ -69,6 +70,7 @@ class Sheet(object):
     def __init__(self, house, plan, extra, base=None):
         fl = plan.spec
         self.house, self.plan, self.base = house, plan, base
+        plan.flights = []           # each stair's rise and going, as the report gives them
         self.id, self.tab, self.title = fl['id'], fl['tab'], fl['title']
         self.level, self.scheme, self.hidden = fl['level'], fl['scheme'], fl['hidden']
         self.names = dict(extra, **metrics(plan))
@@ -81,12 +83,49 @@ class Sheet(object):
                 self.demolition = _lumps(base.plan.solid.difference(plan.solid))
             self.names.update(base_gross=base.plan.gross, gained=plan.gross - base.plan.gross)
         self.scope = house['scope'].child(**self.names)
-        self.stairs = [stairs.build(st) for st in fl['stairs']]
+        self.stairs = [self._flight(st) for st in fl['stairs']]
         for g in self.stairs:
             g['void'], g['rail'] = stairs.well(g, plan.solid)
         self.labels = self._place()
         self.info = report.info(plan, self.scope)
         self._drawn = None
+
+    def _flight(self, st):
+        """A stair drawn, and what it climbs. Its riser is given, or is the
+        height of the storey it climbs over its risers; with its going that
+        is its pitch, held to Approved Document K. On the level above, with
+        the floor's depth known, the well is as far back from the head as
+        there would be less than HEADROOM over the pitch line: below that the
+        floor runs over the flight."""
+        g = stairs.build(st)
+        heights, levels = self.house['heights'], self.house['levels']
+        H = heights.get(st['level'], {}).get('height')
+        R = st['riser'] or (H / g['risers'] if H else None)
+        if st.get('ref') is not None:
+            up = levels.index(st['level']) + 1 if st['level'] in levels else len(levels)
+            fd = heights[levels[up]]['floor_depth'] if up < len(levels) else None
+            if st['show'] == 'above' and H and fd is not None and R:
+                g = stairs.build(dict(st, open_from=(H - fd - stairs.HEADROOM) / R - 1))
+            return g
+        plan = self.plan
+        if R is None or not g['going']:
+            return g
+        G, where = g['going'], st['where']
+        pitch = math.degrees(math.atan2(R, G))
+        plan.flights.append({'id': st['id'], 'risers': g['risers'], 'riser': round(R, 4), 'going': round(G, 4),
+                             'pitch': round(pitch, 1), '2R+G': round(2*R + G, 4)})
+        if st['riser'] and H and abs(R*g['risers'] - H) > 0.015:
+            plan.warn('%s: %d risers of %.0f mm climb %.3f m, and the %s level is %.3f m high'
+                      % (where, g['risers'], R*1000, R*g['risers'], st['level'], H))
+        why = 'a stair built before the regulations, or a drawing error'
+        if pitch > stairs.STEEPEST:
+            plan.warn('%s: the stair pitches at %.1f° — steeper than %g°: %s'
+                      % (where, pitch, stairs.STEEPEST, why))
+        lo, hi = stairs.STRIDE
+        if not lo <= 2*R + G <= hi:
+            plan.warn('%s: twice the riser and the going is %.0f mm (riser %.0f, going %.0f), outside %.0f–%.0f: %s'
+                      % (where, (2*R + G)*1000, R*1000, G*1000, lo*1000, hi*1000, why))
+        return g
 
     def _place(self):
         """Each room's label as (items, x, y), in the plan's room order."""
@@ -98,8 +137,8 @@ class Sheet(object):
             blocks.append(r['shape'])
             if r['label']:
                 blocks.append(labels.text_box(render.rooflight_label(r), r['label'], render.TEXT['note'], None))
-        for o in plan.openings:
-            blocks += [geom.leaf_shape(*leaf)[2] for leaf in o.get('leaves', [])]
+        swings = [geom.leaf_shape(*leaf)[2] for o in plan.openings for leaf in o.get('leaves', [])]
+        swings = [(b.bounds, b) for b in swings]
         blocks += [labels.text_box(lb['at'], lb['text'], render.TEXT[lb['style']], lb['rot']) for lb in fl['labels']]
         if self.demolition is not None:
             blocks.append(self.demolition)
@@ -118,10 +157,24 @@ class Sheet(object):
             else:
                 # a label goes inside its room, so only what reaches the room can be in its way
                 x0, y0, x1, y1 = r['face'].bounds
-                near = [b for (bx0, by0, bx1, by1), b in blocks if bx0 <= x1 and bx1 >= x0 and by0 <= y1 and by1 >= y0]
-                items, x, y, found = labels.place(r, unary_union(near) if near else box(0, 0, 0, 0))
-                if not found:
-                    plan.warn('%s: no clear place for the label %s' % (r['where'], r['name']))
+                near = lambda bs: [b for (bx0, by0, bx1, by1), b in bs if bx0 <= x1 and bx1 >= x0 and by0 <= y1 and by1 >= y0]
+                found = False
+                for these in (near(blocks + swings), near(blocks)):     # off the door swings; else over one
+                    items, x, y, found = labels.place(r, unary_union(these) if these else box(0, 0, 0, 0))
+                    if found:
+                        break
+                if not found:                       # too small or too busy: in the margin nearest it, with a line
+                    side = labels.nearest_side(r, extent)
+                    items, x, y, leader = labels.outside(r, side, extent, self.house.get('front') == side)
+                    margin.append((len(out), side, leader))
+                    _, ix, iy, inside = labels.place(dict(r, dx=0.0, dy=0.0, size='small'), box(0, 0, 0, 0))
+                    x0, y0, x1, y1 = r['rect']
+                    hint = (' or `size: small, dx: %.2f, dy: %.2f` sets it inside, over what is in the way'
+                            % (ix - (x0 + x1)/2.0, iy - (y0 + y1)/2.0)) if inside else ''
+                    plan.warn('%s: no room inside for the label %s: it is set in the %s margin — `label: %s` keeps it there%s'
+                              % (r['where'], r['name'], side, side, hint), 'info')
+                    out.append((items, x, y))
+                    continue
                 for dx, dy, t, cls, rot in items:
                     b = labels.text_box((x+dx, y+dy), t, cls, rot)
                     blocks.append((b.bounds, b))
@@ -212,7 +265,105 @@ def solved(house, path='<house>'):
     for fl in house['sheets']:
         done[fl['id']] = _worked(fl['id'], Sheet, house, plans[fl['id']], extra, done.get(fl['changes']))
         sheets.append(done[fl['id']])
+    first = next((sh.plan for sh in sheets if sh.plan is not None), None)
+    for where, k in house.get('unknown') or []:     # said where every sheet's checks are read, once
+        first.warn('%s: `%s` is not a key the engine reads, so it does nothing' % (where, k))
+    if house.get('connections'):
+        connected(house['connections'], [sh.plan for sh in sheets if sh.plan is not None and sh.plan.spec['changes'] is None])
     return Solved(house, sheets, path)
+
+
+def _called(r):
+    """What a room may be called in `connections`: its name or its id, in any case."""
+    if r is None or r.get('name') is None:
+        return set()
+    return set(str(v).lower() for v in (r['name'], r['id']) if v is not None)
+
+
+def _fits(c, k):
+    """Whether a link is of the kind a connection asks for."""
+    if c['kind'] == 'window':
+        return k['side'] is not None
+    if k['kind'] == 'window' or k['style'] == 'frame':
+        return False
+    return c['kind'] == 'way' or c['kind'] == k['kind']
+
+
+def _between(k):
+    names = [r['name'] if r else 'a space with no room in it' for r in k['rooms']]
+    return names[0] if k['side'] else '%s and %s' % tuple(names)
+
+
+def connected(wanted, plans):
+    """The connections the house file expects, read off its source,
+    against what the as-built sheets — the ones that change nothing —
+    have drawn. Each one missing, extra, or between the wrong rooms is
+    reported, and a door that swings or is hung the wrong way."""
+    if not plans:
+        return
+    mine = dict((id(p), []) for p in plans)
+    for c in wanted:
+        names = [n.lower() for n in c['rooms'] if n.lower() != 'outside']
+        home = next((p for p in plans if all(any(n in _called(r) for r in p.rooms) for n in names)), None)
+        if home is None:
+            lost = [n for n in c['rooms'] if n.lower() != 'outside' and not any(n.lower() in _called(r) for p in plans for r in p.rooms)]
+            plans[0].warn('%s: no as-built sheet has %s' % (c['where'], (
+                'a room called %s' % ' or '.join(lost)) if lost else 'both %s and %s' % c['rooms']), 'error')
+            continue
+        mine[id(home)].append(c)
+    for p in plans:
+        want = mine[id(p)]
+        if not want:
+            continue
+        have = [k for k in p.links if k['side'] is not None or (k['kind'] != 'window' and k['style'] != 'frame')]
+
+        def same(c, k):
+            got = [_called(r) if r is not OUTSIDE else set(['outside']) for r in k['rooms']]
+            if c['kind'] == 'window':
+                return c['rooms'][0].lower() in got[0] and c['side'] == k['side']
+            a, b = [n.lower() for n in c['rooms']]
+            return (a in got[0] and b in got[1]) or (b in got[0] and a in got[1])
+        left = list(have)
+        unmet = []
+        for c in want:
+            k = next((k for k in left if _fits(c, k) and same(c, k)), None)
+            if k is None:
+                unmet.append(c)
+                continue
+            left.remove(k)
+            o = k['opening']
+            if c['into'] and k['into'] is not None and c['into'].lower() not in _called(k['into']):
+                p.warn('%s: the door between %s swings into %s, not %s (%s)'
+                       % (c['where'], _between(k), k['into']['name'] or 'a space with no room in it', c['into'], o['where']))
+            if c['hinge'] and k['hinge'] and c['hinge'] != k['hinge']:
+                p.warn('%s: the door between %s is hung on its %s side, not its %s (%s)'
+                       % (c['where'], _between(k), WORDS[k['hinge']], WORDS[c['hinge']], o['where']))
+        for c in unmet:
+            names = set(n.lower() for n in c['rooms'])
+            k = next((k for k in left if _fits(c, k) and names & set().union(*[
+                _called(r) if r is not OUTSIDE else set(['outside']) for r in k['rooms']])), None)
+            what = 'window' if c['kind'] == 'window' else 'way' if c['kind'] == 'way' else c['kind']
+            if k is not None:
+                left.remove(k)
+                if c['kind'] == 'window':
+                    p.warn('%s: the window in %s looks %s, not %s (%s)'
+                           % (c['where'], c['rooms'][0], WORDS[k['side']], WORDS[c['side']], k['opening']['where']))
+                else:
+                    p.warn('%s: the %s is drawn between %s, not %s and %s (%s)'
+                           % (c['where'], k['kind'], _between(k), c['rooms'][0], c['rooms'][1], k['opening']['where']))
+            elif c['kind'] == 'window':
+                p.warn('%s: no window in %s looks %s' % (c['where'], c['rooms'][0], WORDS[c['side']]))
+            else:
+                p.warn('%s: no %s between %s and %s' % (c['where'], 'way through' if what == 'way' else what,
+                                                        c['rooms'][0], c['rooms'][1]))
+        for k in left:
+            p.warn('%s: the %s %s is not in `connections`'
+                   % (k['opening']['where'], k['kind'], ('in %s, looking %s' % (_between(k), WORDS[k['side']]))
+                      if k['side'] else 'between ' + _between(k)))
+
+
+WORDS = {'n': 'north', 'e': 'east', 's': 'south', 'w': 'west', 'pair': 'pair'}
+OUTSIDE = geom.OUTSIDE
 
 
 def _worked(sid, make, *args):

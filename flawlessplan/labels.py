@@ -115,6 +115,13 @@ def text_box(at, text, cls, rot=None):
 OUT = {'west': (-1, 0), 'east': (1, 0), 'north': (0, -1), 'south': (0, 1)}
 
 
+def nearest_side(r, envelope):
+    """The side of the building a room is nearest, for its label to go in that margin."""
+    x0, y0, x1, y1 = r['face'].bounds
+    ex0, ey0, ex1, ey1 = envelope.bounds
+    return min((('west', x0 - ex0), ('north', y0 - ey0), ('east', ex1 - x1), ('south', ey1 - y1)), key=lambda s: s[1])[0]
+
+
 def outside(r, side, envelope, front=False):
     """A room's label set in the margin on one side of the building, level
     with the room: (items, x, y, leader). The leader is a line from the

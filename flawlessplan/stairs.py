@@ -28,6 +28,9 @@ from shapely.ops import unary_union, linemerge
 BREAK_AMP = 0.075        # how far the zigzag swings either side of the cut
 GRIP = 0.02              # how near a wall an edge of the well is on it
 SHORT = 0.3              # a run of balustrade shorter than this is not one
+HEADROOM = 2.0           # clear over the pitch line, Approved Document K
+STEEPEST = 42.0          # degrees: the steepest a private stair may pitch
+STRIDE = (0.55, 0.70)    # twice the riser plus the going falls between these, in metres
 
 
 def _add(a, b, k=1.0):
@@ -71,6 +74,10 @@ def build(st):
 
     cut, show = st['cut'], st['show']
     at = None                                       # unit index the cut falls in
+    well_from = st.get('open_from')                 # on the level above: the first unit with no floor over it
+    if well_from is not None:
+        well_from = min(max(0, int(math.floor(well_from))), len(units) - 1)
+        cut = None
     if cut is not None and show != 'all':
         at = int(math.floor(cut + 0.5))
         if at >= len(units):                        # cut above its head, both sheets would show the whole flight
@@ -82,6 +89,8 @@ def build(st):
             at = None
     keep = (lambda k: True) if at is None else (
         (lambda k: k < at) if show == 'below' else (lambda k: k > at))
+    if well_from is not None:
+        keep = lambda k: k >= well_from
 
     polys, lines = [], []
 
@@ -156,10 +165,29 @@ def build(st):
                 t = min(2*hb/ca if ca > 1e-9 else 1e9, 2*ha/sn if sn > 1e-9 else 1e9)
                 lines.append((o, _add(_add(o, b, -ca*t), a, sn*t)))
 
-    # walking line: from the foot to the cut going up, from the head to it going down
+    # walking line: from the foot to the cut going up, from the head to it going down; a
+    # whole flight from foot to head, or head to foot on the level above
     walk, head = [], None
     gap = BREAK_AMP + 0.03
-    if cutpt is None:
+    down = st.get('ref') is not None or st['label'] == 'DN'     # seen from the level above, it is walked head to foot
+    if well_from is not None:                       # down from the head to the edge of the floor over the rest
+        u = units[well_from]
+        if u[0] == 'tread':
+            i = u[1]
+            s0, e0, n0 = spans[i]
+            k0 = [k for k, v in enumerate(units) if v[0] == 'tread' and v[1] == i].index(well_from)
+            edge = _add(s0, D[i], math.hypot(e0[0]-s0[0], e0[1]-s0[1]) / float(n0) * k0)
+            back, above = (-D[i][0], -D[i][1]), list(P[i+1:-1][::-1])
+        else:
+            j = u[1]
+            edge, back, above = P[j], (-D[j-1][0], -D[j-1][1]), list(P[j+1:-1][::-1])
+        tip = _add(edge, back, -0.12)
+        walk = [_add(P[-1], D[-1], -0.30)] + above + [_add(tip, back, -0.18)]
+        head = (tip, back)
+    elif cutpt is None and down:
+        walk = [_add(P[-1], D[-1], -0.30)] + list(P[1:-1][::-1]) + [_add(P[0], D[0], 0.18)]
+        head = (P[0], (-D[0][0], -D[0][1]))
+    elif cutpt is None:
         walk = list(P)
         if len(walk) >= 2:
             head = (walk[-1], D[-1])
@@ -175,7 +203,7 @@ def build(st):
         back = (-D[i][0], -D[i][1])
         walk = [_add(P[-1], D[-1], -0.30)] + list(P[i+1:-1][::-1]) + [_add(tip, back, -0.18)]
         head = (tip, back)
-    if st['label'] == 'DN' or show == 'above':
+    if down or show == 'above':
         label = (_add(_add(P[-1], D[-1], -0.62), (-D[-1][1], D[-1][0]), 0.18), st['label'])
     else:
         foot = _add(P[0], D[0], -0.28)              # clear of the bottom riser
@@ -186,8 +214,11 @@ def build(st):
     if show == 'above' and cutpt is not None:       # the rest of the flight, as the floor below shows it
         void = build(dict(st, show='below'))['block']
     n = (-D[-1][1]*W[-1]/2.0, D[-1][0]*W[-1]/2.0)
+    goings = [math.hypot(e[0]-s[0], e[1]-s[1]) / float(n) for s, e, n in spans if n]
     return {'polys': polys, 'lines': lines, 'walk': walk, 'head': head, 'label': label,
             'risers': len(units) + 1, 'block': block, 'void': void, 'rail': [],
+            'open': block if well_from is not None else None, 'going': max(goings) if goings else None,
+            'well_from': well_from,
             'top': (_add(P[-1], n), _add(P[-1], n, -1))}
 
 
@@ -199,15 +230,18 @@ def well(g, solid):
     the stair: where it passes under a wall of this floor there is floor
     over it, and it is left out. The balustrade is every edge of the well
     that is against no wall, less the head; runs of points."""
-    if g['void'] is None:
+    if g.get('open') is not None:                  # worked out from the headroom: the flight in it is the well
+        void, whole = None, g['open']
+    elif g['void'] is None:
         return None, []
-    lumps = g['void'].difference(solid.buffer(GRIP/2, join_style=2))
-    lumps = [p for p in getattr(lumps, 'geoms', [lumps])
-             if p.geom_type == 'Polygon' and (g['block'] is None or p.distance(g['block']) < 2*GRIP)]
-    if not lumps:
-        return None, []
-    void = unary_union(lumps)
-    whole = unary_union([s for s in (g['block'], void) if s is not None])
+    else:
+        lumps = g['void'].difference(solid.buffer(GRIP/2, join_style=2))
+        lumps = [p for p in getattr(lumps, 'geoms', [lumps])
+                 if p.geom_type == 'Polygon' and (g['block'] is None or p.distance(g['block']) < 2*GRIP)]
+        if not lumps:
+            return None, []
+        void = unary_union(lumps)
+        whole = unary_union([s for s in (g['block'], void) if s is not None])
     whole = whole.buffer(2*GRIP, join_style=2).buffer(-2*GRIP, join_style=2)     # one outline, the cut inside it
     edge = whole.boundary.difference(solid.buffer(2*GRIP, join_style=2))
     edge = edge.difference(LineString(g['top']).buffer(2*GRIP, cap_style=2))

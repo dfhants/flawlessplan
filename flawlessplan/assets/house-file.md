@@ -34,6 +34,51 @@ A length may be written in feet and inches as it was given — `sit_d: 14'10"`
 came from: `given` (measured, or quoted to you; what a bare figure is),
 `traced` (read off a drawing) or `assumed` (a guess).
 
+Give everything an `id:` from the start — walls, openings, fittings,
+areas, stairs, rooflights, rooms where two share a name — even when
+nothing names it yet. A proposal then `extends` the as-built sheet and
+`omit`s what it takes out, by id, instead of copying the sheet, and a
+note, a mark or a check can say which thing it means.
+
+Any element may say where it came from: `source: traced` (read off the
+drawing), `assumed` (a guess), or `as-drawn-wrong` — drawn as the source
+has it, which is known to be wrong, as a stair drawn the way an agent's
+plan drew it. The report lists them; `as-drawn-wrong` is said in the
+checks so nobody takes it for a mistake of the tracing.
+
+`house:` takes `name`, `front` (the side the front is on), `front_note`,
+`private: true` for a real home, and `north:` — true north as an angle
+clockwise from up the page (`north: -45` is up and to the left), which
+turns the compass. A key the engine does not read, anywhere in the file,
+is reported, never passed over.
+
+`levels:` lists the storeys bottom up, each an id or `{id: ground,
+height: 2.6, floor_depth: 0.25}`: floor to the floor above, and how deep
+that level's own floor is. A stair takes its riser from the height of the
+storey it climbs, or from its own `riser:`, and its going from its
+treads; its pitch and twice the riser plus the going are in the report,
+and a pitch over 42° or 2R+G outside 550–700 mm is reported — an older
+stair, or a drawing error. On the level above, with the floor's depth
+known, the well is worked out: open from the head back to where there
+would be less than 2.0 m over the pitch line, the floor running over the
+rest of the flight, with a balustrade round it.
+
+`connections:` at the top level is what leads where, read off the drawing
+the house came from: `[HALL, KITCHEN]` for any way through,
+`{door: [HALL, KITCHEN], into: KITCHEN, hinge: s}` for a door (the room
+its leaf swings into, the side its hinge is on), `{opening: [A, B]}`,
+`{window: KITCHEN, side: s}`; `outside` is past the building. It is held
+to the sheets that change nothing: a way through that is missing, extra
+or between other rooms is reported, and so is a door hung or swung the
+other way. The report lists every sheet's connections as drawn.
+
+A sheet traced from a picture may name it: `underlay: {image:
+agent-plan.png, scale: 58.7, at: [x, y], rot: 0}` — a .png or .jpg in the
+house's folder, its pixels to the metre, where its top left corner falls,
+and how far it is turned. `crop --under` sets it faint over the drawing,
+and the page's Source button does the same; it is never in the file that
+is sent or in a public build.
+
 Wherever a sheet takes a point it may be given by one coordinate and the
 wall it lies on, so nothing has to be worked out against a wall that is
 not square to the page:
@@ -90,13 +135,44 @@ fittings:
   - {cylinder: true, at: [5.2, 3.5], facing: s}          # against no wall: a point and the way it faces
 ```
 
+Where a fitting is given no size it takes the usual one, along its back
+and out from it, in metres:
+
+| Kind | Width | Depth |
+|---|---|---|
+| `worktop` | 1.00 | 0.60 |
+| `sink` | 1.00 | 0.50 |
+| `hob` | 0.60 | 0.52 |
+| `oven` | 0.60 | 0.60 |
+| `bath` | 1.70 | 0.70 |
+| `shower` | 0.90 | 0.90 |
+| `wc` | 0.38 | 0.70 |
+| `basin` | 0.50 | 0.40 |
+| `boiler` | 0.45 | 0.35 |
+| `cylinder` | 0.50 | 0.50 |
+| `wardrobe` | 1.20 | 0.60 |
+| `unit` | 0.60 | 0.60 |
+| `fireplace` | 1.20 | 0.35 |
+
+One that does not fit where it is put is reported with how far it runs
+into the wall or out of the building.
+
 The kinds are `worktop`, `sink`, `hob`, `oven`, `bath`, `shower`, `wc`,
 `basin`, `boiler`, `cylinder`, `wardrobe` (fitted) and `unit` (anything
 else built in, with a `label:` — FF, WM). The value is the width along the
 back; `depth:` is how far it stands out. `at:` is as for an opening —
 `centre`, a point, `from_start`, `from_end` — but the last two are measured
 from the corner of the room. `flip: true` turns a bath or sink end for
-end. One that runs into a wall or out of the building is reported.
+end. A sink takes `bowls:` (1, 1.5 or 2) and `drainer:` (`none`, `left`,
+`right` or `both`, as seen standing at it); its bowls keep their shape,
+and a drainer with no room is left off. A `cylinder:` value is its
+diameter. A `fireplace:` is its chimney breast, as wide as its value and
+`depth:` deep, which is masonry and not floor; `opening: [0.55, 0.25]`
+(wide, deep, or `false`) is the fire's recess in it and `hearth: [1.2,
+0.45]` the hearth in front (as wide as the breast by default, or
+`false`). One that runs into a wall or out of the building is reported,
+and so is a door that cannot open to 90° without hitting one, or another
+door.
 
 A house on split levels is drawn a level at a time, like any other: list
 the half-levels in `levels:`, bottom up, and give each its own sheet.
@@ -157,17 +233,18 @@ things share a name. An `omit` that names nothing on the sheet is an error.
 |---|---|
 | `envelope` | Outer faces in order. A point may be `{at: [x, y], t: 0.25, id: south}` — thickness and name of the wall leaving it, `rise:`, `radius:` or `via:` if it curves, and `open: true` where the floor ends and no wall stands. |
 | `walls` | `from`/`to` on the centreline, optional `t`, `id`; `rise:` or `radius:` with `toward:`, or `via:`, for a curve. `path:` for a run of several: its legs are `id.0`, `id.1` … in order, and an opening names the leg it is in (`wall: id.1`) — or the path itself, with `at:` a point, and finds its leg. |
-| `openings` | `door:` (a leaf — `cloak`, `std`, `wide` — or a width), `window:` or `opening:` a width. `at:` is `centre`, a point, `{from_start: d}` or `{from_end: d}`. `hinge:` and `swing:` take compass points, `start`/`end`, `left`/`right`, `in`/`out`. `face:` (the same words as `swing:`) hangs the leaf on that face of the wall instead of the one it opens to. `pair: true`; `style:` `fold`, `slide`, `frame`, `none`. |
+| `openings` | `door:` (a leaf — `cloak`, `std`, `wide` — or a width), `window:` or `opening:` a width. `at:` is `centre`, a point, `{from_start: d}` or `{from_end: d}`. `hinge:` and `swing:` take compass points, `start`/`end`, `left`/`right`, `in`/`out`. `face:` (the same words as `swing:`) hangs the leaf on that face of the wall instead of the one it opens to. `pair: true`; `style:` `fold`, `slide`, `frame`, `none`, or for a garage `up` (up-and-over: the panel drawn overhead as it stands open) or `roller` (its box drawn inside); `swing:` says which side is in. |
 | `rooms` | `name`, `at`; optional `sub` (footnote, may use `{area}`, `{w}`, `{h}`), `size: small`, `rot`, `dims: false`, `dx`/`dy`, `id`. `expect: {w: sit_w, h: sit_d}` (any of `w` east–west, `h` north–south, `area`) is the size the room was given: a room that does not read it, within 50 mm, is reported. `zone: true` draws the room as a dashed outline with its area — there, but not laid out. `label:` a side (`west`, `east`, `north`, `south`) sets the label in that margin with a line to the room; `false` leaves it off. |
 | `zones` | Rooms marked out together as one region: `{name: PHASE 2, rooms: [HALL, WC], sub: ..., label: west}`. Outlined as one, measured, and the rooms stay as drawn. |
 | `dividers` | Undrawn lines that split one open space into two rooms. |
-| `stairs` | `path` foot to head, `width`, `treads` per leg, `turns` (`landing` or `{winders: n}`; `reach: true` makes the lowest winder take in a level run before it), `cut_risers`, `show: below/above/all`. The level above reuses one with `{ref: ground.main, show: above}`. |
-| `fittings` | What is built in: `bath`, `shower`, `wc`, `basin`, `sink`, `hob`, `oven`, `worktop`, `boiler`, `cylinder`, `wardrobe`, `unit` — see above. |
+| `stairs` | `path` foot to head, `width`, `treads` per leg, `riser` if it is not the storey's height over its risers, `turns` (`landing` or `{winders: n}`; `reach: true` makes the lowest winder take in a level run before it), `cut_risers`, `show: below/above/all`. The level above reuses one with `{ref: ground.main, show: above}`; there its arrow runs head to foot and it says DN. |
+| `fittings` | What is built in: `bath`, `shower`, `wc`, `basin`, `sink`, `hob`, `oven`, `worktop`, `boiler`, `cylinder`, `wardrobe`, `fireplace`, `unit` — see above. |
 | `rooflights` | Lights in the ceiling over this sheet's floor: `{at: [x, y], w: 0.8, h: 1.0}` — its middle, and how far it runs east–west and north–south — with `id`, `label` (written under it) and `rot` if wanted. Drawn dashed with a cross, as what is overhead is; room labels keep off it. With an `id`, notes may use `{id_w}`, `{id_h}` and `{id_area}`. One that is not over the building is reported. |
 | `areas` | Shapes with a `style` saying what they are: `outdoor` (roofed or paved, outside the walls), `below` (a lower roof seen from above), `fitting` (a built-in shape that is none of the `fittings`; labels keep off), and `zone` and `new` for a region or a gain the engine cannot derive. |
 | `solids`, `labels`, `gone`, `dims` | Filled masonry; free text (`style:` `name`, `small`, `mini`, `note`, `zone`); demolition lines drawn by hand; dimension lines. |
 | `notes` | What is said about the sheet, by kind: `summary` (one line), then lists `decided`, `unconfirmed`, `needs`, `about`. A plain list is `about`. None of it is drawn — it goes in the panel beside the sheet and in `<sheet>.md` next to the image. One sentence per entry, unwrapped. Notes may use any name, `{gross}`, `{gained}`, and room figures such as `{KITCHEN_area}`. |
 | `require` | Conditions that must hold: `{that: "landing >= width", message: ...}`. |
+| `underlay` | The picture the sheet was traced from — see above. |
 | `level`, `scheme`, `changes`, `demolition` | Which storey, which proposal, and the sheet this one alters — see above. |
 | `unlabelled: ok` | Do not report spaces that have no room in them. |
 | `extends`, `omit` | The earlier sheet this one is, with more; and what it leaves out, by id — see above. |
@@ -184,8 +261,12 @@ default every sheet whose outline differs) and its `notes:`.
 
 ## What gets checked
 
-Every build reports: an opening that runs off its wall or overlaps another;
+Every build reports: a room no door reaches from the front door, or on an
+upper floor from the stair — cupboards too; what `connections` expects and
+the plan does not have; a door that swings into a fitting or another door;
+a stair steeper than 42° or outside 2R+G 550–700 mm; a key nothing reads;
+an opening that runs off its wall or overlaps another;
 a room seeded in a wall; two rooms that are really one space (a wall is
 missing or stops short); a space with no room in it; a room that does not read
-the size it was given (`expect`); a label with nowhere to go; a wall that ends in the open; a wall or a door left standing inside one room; a `require` that fails. Errors fail the
+the size it was given (`expect`); a wall that ends in the open; a wall or a door left standing inside one room; a `require` that fails. Errors fail the
 build.

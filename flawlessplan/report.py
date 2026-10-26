@@ -23,6 +23,9 @@ def facts(plan):
                       'width': round(o['width'], 3),
                       'centre': [round(o['centre'][0], 3), round(o['centre'][1], 3)]}
                      for o in plan.openings],
+        'connections': [connection(k) for k in plan.links],
+        'stairs': list(getattr(plan, 'flights', [])),
+        'sources': list(fl.get('sources', [])),
         'fittings': [{'kind': f['kind'], 'w': round(f['w'], 3), 'd': round(f['d'], 3),
                       'wall': f['host'].name if f['host'] else None,
                       'back': [round(f['o'][0], 3), round(f['o'][1], 3)]} for f in plan.fittings],
@@ -33,6 +36,30 @@ def facts(plan):
                   for z in plan.zones],
         'issues': [{'level': lv, 'message': m} for lv, m in
                    sorted(plan.issues, key=lambda i: LEVELS[i[0]])]}
+
+
+def connection(k):
+    """What one opening joins, by room name: `outside` past the building,
+    None for a space with no room in it. A window is its room and the way
+    it looks; a door also the room it swings into and the side it is hung."""
+    names = [r['name'] if r else None for r in k['rooms']]
+    width = k['opening']['width']
+    if k['side']:
+        return {'kind': k['kind'], 'wall': k['wall'], 'room': names[0], 'side': COMPASS[k['side']],
+                'text': '%s - %s %.2f m, %s wall' % (names[0], k['kind'], width, COMPASS[k['side']])}
+    out = {'kind': k['kind'], 'style': k['style'], 'wall': k['wall'], 'rooms': names}
+    what = {'up': 'up-and-over door', 'roller': 'roller door', 'fold': 'folding doors', 'slide': 'sliding door',
+            'frame': 'fixed light', 'none': 'opening'}.get(k['style'], k['kind'])
+    text = '%s - %s, %s %.2f m in %s' % (tuple(n or '(no room)' for n in names) + (what, width, k['wall']))
+    if k['into'] is not None:
+        out.update(into=k['into']['name'], hinge=COMPASS.get(k['hinge'], k['hinge']))
+        text += ', %s, swings into %s' % ('a pair' if k['hinge'] == 'pair' else 'hinged ' + COMPASS[k['hinge']],
+                                         k['into']['name'] or '(no room)')
+    out['text'] = text
+    return out
+
+
+COMPASS = {'n': 'north', 'e': 'east', 's': 'south', 'w': 'west'}
 
 
 def snapshot(solved):

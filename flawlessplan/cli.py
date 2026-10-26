@@ -20,16 +20,18 @@ go: `--workspace DIR`, else $FLAWLESSPLAN_WORKSPACE, else this folder.
 `python -m flawlessplan` is the same command.
 """
 import argparse
+import hashlib
 import json
+import time
 import os
 import shutil
 import sys
 from . import __version__, edit, model, render, page, marks, report, query, server
-from .solve import solve, beside
+from .solve import solve, solved, beside, house_file
 from .workspace import Workspace
 
 
-def build_house(path, out=None, png=False, quiet=False, root=None, ws=None):
+def build_house(path, out=None, png=False, quiet=False, root=None, ws=None, public=False):
     """Draw every sheet of one house, its page and the file to send.
     Returns its report, issues included, and the solved house it was drawn
     from. `root` is the way from its page back to the index of houses, when
@@ -52,9 +54,21 @@ def build_house(path, out=None, png=False, quiet=False, root=None, ws=None):
         fh.write(page.share(s.house['name'], s.shown()))
     with open(s.path) as fh:
         version = edit.version(fh.read())
+    under = {}
+    for sheet in [] if public else s.plans():       # the source drawings: for the owner's page, never for one hosted
+        if sheet.plan.spec['underlay'] is None:
+            continue
+        try:
+            u, data = source(s, sheet)
+            name = 'source-%s%s' % (sheet.id, os.path.splitext(u['image'])[1].lower())
+            with open(os.path.join(out, name), 'wb') as fh:
+                fh.write(data)
+            under[sheet.id] = render.underlay(u, data, href=name)
+        except ValueError as e:
+            print('%s: %s' % (s.name, e), file=sys.stderr)
     with open(os.path.join(out, 'index.html'), 'w') as fh:
         fh.write(page.markup(s.house['name'], s.shown(), root, send=sent(s.name),
-                             hidden=[p for p in s.sheets if p.hidden], version=version))
+                             hidden=[p for p in s.sheets if p.hidden], version=version, under=under))
     if not quiet:
         summarise(rep, out)
     return rep, s
@@ -76,7 +90,7 @@ def build_all(ws, public=False, png=False, quiet=True):
             if public and solve(path).house['private']:
                 print('%s: private, left out' % path)
                 continue
-            rep, s = build_house(path, os.path.join(out, os.path.basename(path)), png, quiet, root='../')
+            rep, s = build_house(path, os.path.join(out, os.path.basename(path)), png, quiet, root='../', public=public)
         except (model.ConfigError, ValueError) as e:
             print('%s: %s' % (path, e), file=sys.stderr)
             failed.append(path)
@@ -118,7 +132,21 @@ def rasterise(svg):
 WHOLE = 1600.0                  # pixels along the longer side of a whole sheet
 
 
-def crop(path, sheet, box=None, out=None, scale=3.0, ink=False, ws=None, ids=None):
+def source(s, sheet, u=None):
+    """A sheet's source drawing, as (where the house file sets it, its
+    bytes). Only a picture in the house's own folder is read."""
+    u = u or sheet.plan.spec['underlay']
+    if u is None:
+        raise ValueError('sheet %s has no `underlay:` — give it {image:, scale:, at: [x, y]}' % sheet.id)
+    folder = os.path.realpath(os.path.dirname(s.path))
+    where = os.path.realpath(os.path.join(folder, u['image']))
+    if os.path.commonpath([folder, where]) != folder or not os.path.isfile(where):
+        raise ValueError('sheet %s: no picture called %s in %s' % (sheet.id, u['image'], folder))
+    with open(where, 'rb') as fh:
+        return u, fh.read()
+
+
+def crop(path, sheet, box=None, out=None, scale=3.0, ink=False, ws=None, ids=None, under=False):
     """A close view of part of one sheet — the way to read fine detail.
     `box` is x0, y0, x1, y1 in metres; the PNG is `scale` pixels per cm.
     With no box it is the whole sheet, small enough to take in at once:
@@ -128,9 +156,15 @@ def crop(path, sheet, box=None, out=None, scale=3.0, ink=False, ws=None, ids=Non
     With `ids` it is those marks, open or resolved and whichever sheet
     they were drawn on, set on this sheet as it is now: what was built
     beside what was drawn, to show the owner. With no box it is framed
-    round them."""
+    round them. With `under` the sheet's source drawing is set over it,
+    faint, so where the two differ shows: `under` is True for the one its
+    `underlay:` names, or that dict itself to try another."""
     s = solve(path)
     sh = s.sheet(sheet)
+    lines = sh.lines
+    if under:
+        u, data = source(s, sh, under if isinstance(under, dict) else None)
+        lines = lines + [render.underlay(u, data)]
     mine = None
     if ids:
         every = dict((m['id'], m) for m in marks.strokes(drawn_on(path), s.plans()[0].id, done=True))
@@ -150,15 +184,17 @@ def crop(path, sheet, box=None, out=None, scale=3.0, ink=False, ws=None, ids=Non
     if ink or mine:
         if mine is None:
             mine = [m for m in marks.strokes(drawn_on(path), s.plans()[0].id) if m['sheet'] == sheet]
-        marks.panels(out, sh.lines, (x0, y0, x1-x0, y1-y0), mine,
+        marks.panels(out, lines, (x0, y0, x1-x0, y1-y0), mine,
                      '%s · %s · x %.2f–%.2f, y %.2f–%.2f m' % (s.house['name'], sheet, x0, x1, y0, y1),
                      names=marks.BUILT if ids else marks.NAMES)
     else:
         vb = (x0*render.U, y0*render.U, (x1-x0)*render.U, (y1-y0)*render.U)
         with open(out, 'w') as fh:
-            fh.write(render.standalone(sh.lines, vb, scale=1.0/scale))
+            fh.write(render.standalone(lines, vb, scale=1.0/scale))
     rasterise(out)
-    return out[:-4] + '.png'
+    png = out[:-4] + '.png'
+    LOOKED[png] = look(path, 'crop %s %s' % (sheet, ' '.join('%.2f' % v for v in box)), ws)
+    return png
 
 
 def marked(path, ws=None, done=False, sheet=None):
@@ -171,8 +207,18 @@ def marked(path, ws=None, done=False, sheet=None):
     if not drawn:
         return ''
     s = solve(path)
+    with open(s.path) as fh:
+        now = edit.version(fh.read())
+    folder = os.path.dirname(s.path)
+
+    def then(version):
+        text = marks.recall(folder, version)
+        try:
+            return solved(model.loads(text, s.path), s.path) if text else None
+        except ValueError:
+            return None
     return marks.brief(s.house, s.sheets, drawn, os.path.join((ws or Workspace()).build, s.name, 'marks'),
-                       rasterise, changed=os.path.getmtime(s.path), done=done, sheet=sheet)
+                       rasterise, changed=os.path.getmtime(s.path), done=done, sheet=sheet, now=now, then=then)
 
 
 def drawn_on(path):
@@ -190,10 +236,62 @@ def nothing(path, name, done=False, sheet=None):
     return '%s: nothing still open — %d resolved%s' % (where, len(S), '' if done else ' (ask for resolved marks to see them)')
 
 
-def resolve(path, ids, note, sheets=None, reopen=False):
-    """Close the marks of a house that have been built in, or open them
-    again. Returns what was done, as lines."""
-    return marks.resolve(beside(path, 'marks.json'), ids, note, sheets, [p.id for p in solve(path).sheets], reopen)
+LOOKED = {}                     # a picture made in this process -> the look it was
+
+
+def _looks(path, ws):
+    return os.path.join((ws or Workspace()).build, solve(path).name, 'looks.json')
+
+
+def look(path, what, ws=None):
+    """Write down that a house was looked at — a crop of it, or its checks
+    read — as it is now, and return the look's id. A mark is resolved on a
+    look taken after the change, so it is never closed on an edit nobody
+    looked at."""
+    with open(house_file(path)) as fh:
+        version = edit.version(fh.read())
+    dest = _looks(path, ws)
+    try:
+        with open(dest) as fh:
+            seen = json.load(fh)
+    except (OSError, ValueError):
+        seen = {}
+    lid = 'look-' + hashlib.sha256(('%s %s %r' % (version, what, time.time())).encode('utf-8')).hexdigest()[:8]
+    seen[lid] = {'version': version, 'what': what, 'when': int(time.time())}
+    seen = dict(sorted(seen.items(), key=lambda kv: kv[1]['when'])[-200:])
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    with open(dest + '.tmp', 'w') as fh:
+        json.dump(seen, fh, indent=1)
+    os.replace(dest + '.tmp', dest)
+    return lid
+
+
+def looked_at(path, lid, ws=None):
+    """Refuse a look that is not one, or was taken before the house file
+    was last changed."""
+    try:
+        with open(_looks(path, ws)) as fh:
+            seen = json.load(fh)
+    except (OSError, ValueError):
+        seen = {}
+    with open(house_file(path)) as fh:
+        now = edit.version(fh.read())
+    if not lid:
+        raise ValueError('a mark is resolved on a look at what was built: crop the place you changed, or check the '
+                         'house, after the change, and give the look id it answers with as `checked`')
+    if lid not in seen:
+        raise ValueError('no look called %r: crop the place you changed, or check the house, and give the id it answers with' % lid)
+    if seen[lid]['version'] != now:
+        raise ValueError('look %s was of version %s, and the house file is now %s: look at it as it is, after the change'
+                         % (lid, seen[lid]['version'], now))
+
+
+def resolve(path, ids, note, sheets=None, reopen=False, state='resolved', checked=None, ws=None):
+    """Reply to the marks of a house — resolved, blocked or a question —
+    or open them again. Resolving takes a look (`checked`) taken after the
+    change. Returns what was done, as lines."""
+    vet = (lambda: looked_at(path, checked, ws)) if state == 'resolved' and not reopen else None
+    return marks.resolve(beside(path, 'marks.json'), ids, note, sheets, [p.id for p in solve(path).sheets], reopen, state, vet)
 
 
 def at(path, sheet, where):
@@ -235,6 +333,8 @@ def summarise(rep, out):
         for r in f['rooms']:
             print('      %-16s %5.2f × %5.2f  %5.1f m²  %s'
                   % (r['name'], r['w'], r['h'], r['area'], '' if r['shape'] == 'rect' else r['shape']))
+        for c in f.get('connections', []):
+            print('      %s' % c['text'])
         for i in f['issues']:
             print('    %-5s %s' % (i['level'], i['message']))
 
@@ -268,6 +368,12 @@ def main(argv=None):
     k.add_argument('box', nargs='*', type=float, metavar='N', help='X0 Y0 X1 Y1, in metres; none for the whole sheet')
     k.add_argument('--out')
     k.add_argument('--marks', action='store_true', help='two panels: the drawing, and the same with what was drawn on it')
+    k.add_argument('--under', nargs='?', const=True, metavar='IMAGE',
+                   help="the sheet's source drawing over it, faint: its `underlay:`, or a picture in the house's folder "
+                        'with --scale and --at')
+    k.add_argument('--scale', type=float, help='with --under IMAGE: its pixels to the metre')
+    k.add_argument('--at', nargs=2, type=float, metavar=('X', 'Y'), default=(0.0, 0.0),
+                   help='with --under IMAGE: where its top left corner falls on the plan, in metres')
     k.add_argument('--ids', nargs='+', metavar='ID', help='those marks, open or resolved, on this sheet as it is now: '
                    'what was built beside what was drawn; with no box, framed round them')
     w = sub.add_parser('at', help='what a sheet has at a point, within a radius, or in a box')
@@ -284,7 +390,11 @@ def main(argv=None):
     r.add_argument('house')
     r.add_argument('ids', nargs='+', metavar='ID', help='as `marks` lists them')
     r.add_argument('--note', default='', help='how they were dealt with, in a line')
-    r.add_argument('--sheets', nargs='+', metavar='SHEET', help='the sheets they were applied to, if not only the one drawn on')
+    r.add_argument('--sheets', nargs='+', metavar='SHEET', help='the sheets a mark was applied to, if not only the one drawn on: '
+                   'SHEET ... for one mark, or ID=SHEET,SHEET ... per mark')
+    r.add_argument('--state', choices=marks.STATES, default='resolved',
+                   help='resolved (built in), blocked (needs the engine changed, or information), question (asks the owner)')
+    r.add_argument('--checked', metavar='LOOK', help='to resolve: the look id a crop or check gave after the change')
     r.add_argument('--reopen', action='store_true', help='open them again instead')
     n = sub.add_parser('snapshot', help="rewrite a house's expected.json from the plan as it now solves")
     n.add_argument('house', nargs='+')
@@ -308,14 +418,24 @@ def main(argv=None):
         elif a.cmd == 'crop':
             if len(a.box) not in (0, 4):
                 raise ValueError('give X0 Y0 X1 Y1, or nothing for the whole sheet')
-            print(crop(ws.find(a.house), a.sheet, a.box or None, a.out, ink=a.marks, ws=ws, ids=a.ids))
+            under = a.under
+            if isinstance(under, str):                  # a picture named here, not in the house file
+                if not a.scale or a.scale <= 0:
+                    raise ValueError('--under IMAGE needs --scale: its pixels to the metre')
+                under = {'image': under, 'scale': a.scale, 'at': tuple(a.at), 'rot': 0.0}
+            png = crop(ws.find(a.house), a.sheet, a.box or None, a.out, ink=a.marks, ws=ws, ids=a.ids, under=under)
+            print(png)
+            print('look %s' % LOOKED[png])
         elif a.cmd == 'share':
             print(share(ws.find(a.house), a.out, ws))
         elif a.cmd == 'marks':
             for h in a.house:
                 print(marked(ws.find(h), ws, a.all, a.sheet) or nothing(ws.find(h), h, a.all, a.sheet))
         elif a.cmd == 'resolve':
-            print('\n'.join(resolve(ws.find(a.house), a.ids, a.note, a.sheets, a.reopen)))
+            sheets = a.sheets
+            if sheets and all('=' in s for s in sheets):  # ID=ground,infill: per mark
+                sheets = dict((s.split('=', 1)[0], [t for t in s.split('=', 1)[1].split(',') if t]) for s in sheets)
+            print('\n'.join(resolve(ws.find(a.house), a.ids, a.note, sheets, a.reopen, a.state, a.checked, ws)))
         elif a.cmd == 'snapshot':
             for h in a.house:
                 print(snapshot(ws.find(h)))
@@ -343,6 +463,7 @@ def main(argv=None):
                 else:
                     issues += [(h,) + i for i in solve(path).issues()]
                     issues += [(h, 'snapshot', 'error', d) for d in drift(path)]
+                    print('%s: look %s' % (h, look(path, 'check', ws)))
             except (model.ConfigError, ValueError) as e:
                 print('%s: %s' % (h, e), file=sys.stderr)
                 bad += 1

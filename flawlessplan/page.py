@@ -123,7 +123,7 @@ def said(info):
     return out
 
 
-def markup(title, sheets, root=None, send=None, hidden=(), version=None):
+def markup(title, sheets, root=None, send=None, hidden=(), version=None, under=None):
     """The page for one house, from its sheets (solve.Sheet: id, tab, vb,
     lines, info). `root` is the path from the page to the index of houses:
     given, the page has a way back to it, its own fonts, and can be put on a
@@ -131,7 +131,10 @@ def markup(title, sheets, root=None, send=None, hidden=(), version=None):
     made: given, the page has a button that hands it over. `sheets` are
     the ones that show; `hidden` the ones that do not, listed in the menu
     that brings them back; `version` names the house file the page was
-    drawn from, which the page gives back with any change it asks for."""
+    drawn from, which the page gives back with any change it asks for.
+    `under` is each sheet's source drawing, as an SVG image served beside
+    the page: drawn faint over the sheet when the Source button is on."""
+    under = under or {}
     movable = [s.id for s in sheets if getattr(s, 'kind', 'plan') == 'plan']     # the outline sheet is not in the file to be moved
     sheets = [(s.id, s.tab, s.vb, s.lines, s.info) for s in sheets]
     keys = [s[0] for s in sheets]
@@ -148,11 +151,11 @@ def markup(title, sheets, root=None, send=None, hidden=(), version=None):
             '<svg id="sv-%s" class="draw" viewBox="%s %s %s %s" role="img"'
             ' aria-label="%s sheet, with a drawing layer">\n'
             '    <rect class="hit" x="%s" y="%s" width="%s" height="%s"/>\n'
-            '%s\n'
+            '%s\n%s'
             '    <g id="mk-%s"></g>\n'
             '    <g id="gh-%s"></g>\n'
             '  </svg></div>' % (k, k, k, x, y, w, h, render.esc(label), x, y, w, h,
-                               '\n'.join(lines), k, k))
+                               '\n'.join(lines), ('    %s\n' % under[k]) if k in under else '', k, k))
     home = '' if root is None else (
         '  <a class="home" href="%sindex.html" aria-label="Flawlessplan: all houses" title="All houses">'
         '<img src="%s" alt="" width="26" height="26"></a>\n' % (root, icon_uri()))
@@ -161,13 +164,17 @@ def markup(title, sheets, root=None, send=None, hidden=(), version=None):
         '    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3"/><path d="M8 7l4-4 4 4"/>'
         '<path d="M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></svg>\n'
         '    <span>Share</span>\n  </a>\n' % render.esc(quote(send)))
+    source = '' if not under else (
+        '  <button id="source" class="toggle" aria-pressed="false" title="The drawing each sheet was traced from, faint over it">\n'
+        '    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="1.5"/>'
+        '<path d="M3 15l5-5 4 4 3-3 6 6"/></svg>\n    <span>Source</span>\n  </button>\n')
     js = {'VIEW': asset('view.js'), 'KEYS': _js(keys), 'LABELS': _js(dict(s[:2] for s in sheets)),
           'HIDDEN': _js([{'id': s.id, 'label': s.tab} for s in hidden]), 'MOVABLE': _js(movable), 'VERSION': _js(version)}
     parts = {'TITLE': render.esc(title), 'TABS': tabs, 'STAGES': '\n'.join(stages),
              'INFOS': '\n'.join(panel(s[0], s[4]) for s in sheets),
              'CSS': asset('page.css').replace('__DRAWING__', render.css(VARS, 'svg.draw')),
              'JS': _fill(asset('page.js'), js),
-             'ICON': icon(root), 'FONTS': fonts(root), 'HOME': home, 'SEND': send}
+             'ICON': icon(root), 'FONTS': fonts(root), 'HOME': home, 'SEND': source + send}
     # the template is its head — title, icon, faces, styles — then a blank line, then its body
     head, body = _fill(asset('page.html'), parts).split('\n\n<header', 1)
     return ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'

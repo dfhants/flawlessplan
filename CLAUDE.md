@@ -157,11 +157,17 @@ open, hung on the face they open to. Use the leaf names — `cloak` 686,
 width.
 
 **Fittings** are what a sales plan shows built in — bath, shower, WC,
-basin, sink, hob, oven, worktop, boiler, cylinder, fitted wardrobe, and
-`unit` for anything else with a label — and never furniture. A fitting's
+basin, sink, hob, oven, worktop, boiler, cylinder, fitted wardrobe,
+fireplace, and `unit` for anything else with a label — and never
+furniture. A fitting's
 back is against a wall, on a face, at a place along it (`from_start` and
 `from_end` from the corner of the room, not the end of the wall's line);
-`geom` stands it there and reports one that runs into a wall. Each symbol
+`geom` stands it there and reports one that runs into a wall, or that a
+door hits swung open to 90°, or where two doors meet (`Plan._swings`).
+A sink's `bowls:` keep their shape at any width and its `drainer:` is
+left off before they shrink. A fireplace's breast is masonry: `geom` adds
+it to the solids and finds the rooms again, so it is not floor, and only
+the hearth and the recess are its symbol. Each symbol
 is written once in `fittings.py`, in the fitting's own terms, and `render`
 sets it down. Labels keep off them. They are in the report and in what an
 edit says it changed, not in a snapshot.
@@ -178,6 +184,15 @@ entry of style `zone`.
 a sheet each. `open: true` on an envelope point makes the wall leaving it
 no wall — the floor's edge, drawn thin — which is where a half-level meets
 the one beside it or a gallery looks down.
+
+**Connections** are read off the plan, never written: `Plan.links` is
+each opening with the rooms either side of it (`room_at`, OUTSIDE past the
+envelope, a nameless room for a space with none), the one its leaf swings
+into and the side it is hung; a window its room and the way it looks.
+`Plan._reach` walks the doors from outside, or on an upper floor from the
+head of a stair, and reports each room it never comes to. `connections:`
+in the house file is what the source drawing shows, held to the sheets
+that change nothing by `solve.connected`.
 
 **Rooms** are a name and a seed point. The engine finds the face of the plan
 the point is in — with every door shut — and measures it: a rectangle reads
@@ -200,7 +215,9 @@ a zone's outline by hand.
 
 **Labels** place themselves: largest layout that fits, inside the room, off
 door swings, stairs, fittings and demolition. This happens when a sheet is
-solved, so `check` reports a label with nowhere to go. Glyph advances (`CH`
+solved. Where no layout fits off the swings one may sit over a swing; where
+none fits at all the label goes in the nearest margin with a line, said as
+information (`labels.nearest_side`). Glyph advances (`CH`
 in `labels.py`) were measured off a render; remeasure if a font or size
 changes. `dx`/`dy` on a room moves its label by hand. `label: west` (or any
 side) sets it in the margin on that side with a line to the room, for a
@@ -211,11 +228,24 @@ corner a landing or winders. Counting along it every tread is one riser, a
 landing one, n winders n, plus the last riser onto the floor above. A sheet
 shows the stair up to `cut_risers`; the level above shows the rest with
 `{ref: ground.main, show: above}`, so between them the flight appears
-exactly once. The cut end is the zigzag itself. On the level above, what
+exactly once. The cut end is the zigzag itself. A stair on the level
+above, or labelled DN, has its arrow from head to foot. On the level above, what
 is past the zigzag is the well and not floor: `stairs.well` shades it as far
 as no wall of that floor stands over it (`void`) and draws a balustrade
 (`rail`) along every edge of the well that is against no wall, but for the
-head. Neither is written in a house file.
+head. Neither is written in a house file. Where `levels` give the storey's
+`height` and the level above its `floor_depth`, the well is worked out
+instead (`open_from`): from the head back to where there would be less than
+`HEADROOM` over the pitch line, the floor running over the treads below it,
+and `void` is None. `Sheet._flight` gives each stair its riser (its own, or
+the storey over its risers) and pitch, and holds it to Approved Document K.
+
+**Ids and sources** Every wall, opening, fitting, area, stair and rooflight
+takes an `id:`, and `omit` takes any of them by it, so a proposal
+`extends` the as-built sheet rather than copying it. Any element may say
+`source: traced | assumed | as-drawn-wrong`; `model` gathers them
+(`sources`), the report lists them and `as-drawn-wrong` is said in the
+checks.
 
 **Parts** Sheets that share half a house share it through `parts`, so they
 cannot drift apart. Split a part where several sheets will need one half
@@ -249,18 +279,39 @@ manual wrapping. A layout choice the owner has not agreed goes in
 
 Served by the launch config, each house's page saves every stroke and note
 to `houses/<house>/marks.json`, in metres, tagged with its sheet and the
-time. Nothing tells you when they draw: they will say so. Then use the
+time. Nothing tells you when they draw: they will say so — and before
+building or changing any sheet, read the open marks and act on them first:
+every tool that writes a house answers with `open_marks` while any are open
+(`mcp_server._marks_first`). Then use the
 `read-marks` skill (`plugin/skills/read-marks/`), which is the procedure:
 `python -m flawlessplan marks houses/<name>`, pictures first, signs before
 positions, say back before changing.
 
-A mark has an id (its time, where the page gave it no other) and is open
-or resolved. `marks` lays out the open ones; `resolve_marks` closes the
-ones built in, in the same turn as the change, with a line saying how and
-the sheets they were applied to. A resolved mark
+A mark is a stroke (the pen) or a comment (one tool: a click drops a
+numbered pin, a drag draws a box, and the words go in the list beside the
+sheet, never over the drawing). Every mark on a sheet is numbered in the
+order drawn, resolved ones too, so a number never moves. When the server
+first sees a comment it writes on it the house version it was made on and
+what it is on — its room and what `query.at` finds at the pin or in the
+box (`marks.attach`) — and keeps that version of the house file in
+`houses/<house>/.versions/` (not in git), so `marks` can set the drawing
+it was made on beside the drawing as it is now.
+
+A mark has an id (its time, where the page gave it no other) and is open,
+or answered (`marks.STATES`): resolved (built in), blocked (it needs the
+engine changed, or information) or question (the owner is asked). `marks`
+lays out the open ones; `resolve_marks` is the reply, in the same turn as
+the change: a line the owner reads under the mark, the state, and the
+sheets each was applied to — per mark, `{id: [sheets]}`. Resolving takes a
+look taken after the change: every `crop` and `check` writes one down
+(`cli.look`, `build/<house>/looks.json`, against the file's version) and
+answers with its id, and `cli.looked_at` refuses one that is missing or
+older than the file. Blocked marks and questions stay in sight on the
+page; a reply from the owner to any answered mark opens it again. A resolved mark
 stays in `marks.json` and the page shows it in grey when asked; only the
 owner deletes one, on the page. The page sends its whole list back, so the
-server keeps resolved what was resolved meanwhile (`marks.keep`).
+server keeps answered what was answered meanwhile, unless the owner has
+replied since, and keeps both sides' replies (`marks.keep`).
 
 After a change made from marks, `crop` with their ids sets them on the
 sheet as it is now — what was built beside what was drawn — and `show` with
@@ -268,6 +319,8 @@ a sheet gives the address that opens on it: that is the say-back.
 
 Do not add code that guesses what a mark means. A classifier was written
 and removed: give the reader better pictures and better questions to ask.
+Reading strokes as new walls, doors or areas was asked for again and
+declined for the same reason.
 
 A plain `http.server`, or the page opened as a file, does not save; the
 page says so.
@@ -355,7 +408,12 @@ itself for an agent with no folder to write in (a chat in the desktop app).
 does. Each takes the `version` that `read_house` and every change give, and
 refuses to write over a file that is no longer that one. `edit_house` takes
 one passage, or `edits`: several, made in order and solved once, all kept
-or none — never make an agent find an order in which half a change solves. The transport
+or none — never make an agent find an order in which half a change solves.
+`dry_run` solves without saving. A text that does not solve is refused
+with the line at fault (`edit.line_of`, through the parts a sheet uses);
+a whole text that did not solve is kept as `house.draft.yaml`, and
+`edit_house` with `draft` puts it right in place, becoming the house file
+once it solves. The transport
 is the `mcp` SDK's (version 2, which needs Python 3.10 or later). Keep it an
 adapter: a tool is one call into the engine. Structural edits stay edits to
 the house file — those tools make them and guess nothing; a file that does
