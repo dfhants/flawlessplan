@@ -23,7 +23,7 @@ from typing import Literal, Optional, Union
 import yaml
 from mcp.server.mcpserver import MCPServer, Image
 from mcp.server.mcpserver.exceptions import ToolError as Refusal
-from . import cli, edit, model, query, report, server
+from . import __version__, cli, edit, model, query, report, server
 from . import marks as ink
 from .page import ASSETS
 from .solve import solve, house_file
@@ -38,6 +38,9 @@ with every room size measured from the geometry. Coordinates are metres, x east 
 To draw a house that is not there yet, call `guide` first and follow it: it is the procedure, every \
 key of a house file and two whole houses to copy from. Then `write_house` makes it. You need no other \
 access to the owner's machine.
+
+If any tool's answer says the page address has changed, tell the owner straight away, before anything \
+else, and call `show` to give them the page: a page they have open at the old address is no longer saved.
 
 Marks come first. Before building or changing any sheet of a house that is already there, call \
 `marks` and act on what the owner has left open, or ask about it: it is what they asked for, and a \
@@ -95,7 +98,7 @@ def _png(path):
 
 # ---- reading
 
-def list_houses() -> list:
+def list_houses() -> dict:
     out = []
     for name in houses():
         try:
@@ -107,7 +110,7 @@ def list_houses() -> list:
                     'sheets': [{'id': p.id, 'title': p.title, 'level': p.level, 'scheme': p.scheme,
                                 'changes': p.base.id if p.base else None,
                                 'extends': p.plan.spec['extends'], 'hidden': p.hidden} for p in s.plans()]})
-    return out
+    return {'flawlessplan': __version__, 'houses': out}
 
 
 def check(house: str) -> str:
@@ -183,11 +186,47 @@ def show(house: Optional[str] = None, sheet: Optional[str] = None) -> str:
         at = '#' + sheet
     elif house is not None:
         _house(house)
-    if WS.root not in PAGES:
-        PAGES[WS.root] = server.background(WS)
+    url = pages()
+    WS.remember(given=url)                          # given to the owner: nothing more to tell them
     return '%s%s  —  what is drawn there is saved, and `marks` reads it%s' % (
         PAGES[WS.root], house + '/' + at if house else '',
         '\nnot built: ' + ', '.join(failed) if failed else '')
+
+
+def pages():
+    """The address this workspace's pages are served at: started here,
+    on the workspace's own port, or found already served by another
+    process."""
+    if WS.root not in PAGES:
+        PAGES[WS.root] = server.background(WS)
+    return PAGES[WS.root]
+
+
+def moved():
+    """What to tell the owner when the pages are no longer where they were
+    last told they are, or None: said with every tool's answer until
+    `show` gives them the new one."""
+    now, given = PAGES.get(WS.root), WS.settings().get('given')
+    if now and given and now != given:
+        return ('the page address has changed from %s to %s — tell the owner now, and call `show` to give them '
+                'the page' % (given, now))
+    return None
+
+
+def _told(fn):
+    """A tool, with a changed page address added to whatever it answers."""
+    @functools.wraps(fn)
+    def run(*a, **k):
+        out = fn(*a, **k)
+        said = moved()
+        if not said:
+            return out
+        if isinstance(out, dict):
+            return dict(out, page_address=said)
+        if isinstance(out, list):
+            return out + [said]
+        return '%s\n%s' % (out, said) if isinstance(out, str) else out
+    return run
 
 
 def share(house: str) -> str:
@@ -202,7 +241,7 @@ def init_workspace(examples: bool = True) -> str:
 
 def guide() -> str:
     """How a house is written: the procedure, the keys, and the examples whole."""
-    out = [open(os.path.join(ASSETS, name)).read() for name in ('new-house.md', 'house-file.md')]
+    out = ['Flawlessplan %s.\n' % __version__] + [open(os.path.join(ASSETS, name)).read() for name in ('new-house.md', 'house-file.md')]
     for name in sorted(os.listdir(EXAMPLES)):
         path = os.path.join(EXAMPLES, name, 'house.yaml')
         if os.path.exists(path):
@@ -559,7 +598,7 @@ def settle_note(house: str, sheet: str, text: str,
 # ---- the tools as the protocol lists them
 
 TOOLS = [
-    (list_houses, 'list_houses', 'Every house, with its levels and its sheets: which level each draws, '
+    (list_houses, 'list_houses', 'The version of Flawlessplan these tools are (`flawlessplan`), and every house, with its levels and its sheets: which level each draws, '
      'its scheme, the sheet it changes, the sheet it extends, and whether it is hidden. They are in the order of '
      'the tabs, which is the order of `sheets:` in the file.'),
     (guide, 'guide', 'How to draw a house that is not there yet, or add to one: what to ask the owner, the '
@@ -684,13 +723,17 @@ def _quiet(fn):
 
 
 def make():
-    app = MCPServer('flawlessplan', instructions=INSTRUCTIONS)
+    app = MCPServer('flawlessplan', instructions=INSTRUCTIONS, version=__version__)
     for fn, name, about in TOOLS:
-        app.add_tool(_quiet(fn), name=name, description=about)
+        app.add_tool(_told(_quiet(fn)), name=name, description=about)
     return app
 
 
 def serve(ws=None):
     global WS
     WS = ws or Workspace()
+    try:                                    # up at once, on the workspace's own port: a page left open finds it again
+        pages()
+    except OSError:
+        pass
     make().run()

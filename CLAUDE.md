@@ -323,7 +323,17 @@ Reading strokes as new walls, doors or areas was asked for again and
 declined for the same reason.
 
 A plain `http.server`, or the page opened as a file, does not save; the
-page says so.
+page says so. A served page that stops reaching its server says so too,
+in a banner across the top, and clears it when the server answers again.
+
+The pages keep one address. A workspace's port is chosen once (8765 if
+it is free) and kept in `.flawlessplan.json` at its root, with the address
+last given to the owner; `server.start` uses it, another only for the
+time it is taken, and `server.background` uses a second process's server
+of the same workspace rather than starting one. The agent tools start
+the pages as they start. When the address is not the one last given,
+every tool's answer says so (`mcp_server.moved`) until `show` gives the
+new one.
 
 A served page follows its house. It asks the server for `<house>/stamp`,
 which stands for the page as it is in `build/` now, and loads itself again

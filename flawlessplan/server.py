@@ -15,13 +15,18 @@ import json
 import os
 import re
 import threading
+import urllib.request
 from . import edit
 from .solve import solve
 from . import marks as ink
 from .workspace import Workspace
 
 
+FIRST = 8765                    # the port a workspace is first offered
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
+    WHO = '/_flawlessplan'          # which workspace this is: for a second process to find the first
     MARK = re.compile(r'^/([\w-]+)/marks\.json$')
     STAMP = re.compile(r'^/([\w-]+)/stamp$')
     SHEETS = re.compile(r'^/([\w-]+)/sheets$')
@@ -79,6 +84,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         dest, stamp = self.marks_file(), self.stamp()
         if stamp:
             return self.reply(200, stamp)
+        if self.path.split('?')[0] == self.WHO:
+            return self.reply(200, json.dumps({'workspace': self.ws.root}).encode('utf-8'))
         if not dest:
             return super().do_GET()
         self.reply(200, open(dest, 'rb').read() if os.path.exists(dest) else b'[]')
@@ -183,27 +190,57 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             super().log_message(fmt, *args)
 
 
-def start(ws=None, port=8765):
-    """A server for a workspace, not yet running. Port 0 takes any free one."""
+def start(ws=None, port=None):
+    """A server for a workspace, not yet running. Port 0 takes any free
+    one; None, the workspace's own: chosen once and kept in its settings,
+    so a page left open finds its server again after a restart. Only if
+    that one is taken is another used, for this time."""
     ws = ws or Workspace()
     os.makedirs(ws.build, exist_ok=True)
     kind = type('Handler', (Handler,), {'ws': ws})
-    return http.server.ThreadingHTTPServer(('127.0.0.1', port), lambda *a, **k: kind(*a, directory=ws.build, **k))
+    make = lambda p: http.server.ThreadingHTTPServer(('127.0.0.1', p), lambda *a, **k: kind(*a, directory=ws.build, **k))
+    if port is not None:
+        return make(port)
+    kept = ws.settings().get('port')
+    chosen = isinstance(kept, int) and not isinstance(kept, bool) and 0 < kept < 65536
+    try:
+        srv = make(kept if chosen else FIRST)
+    except OSError:                         # taken, by something else: another port for this time
+        srv = make(0)
+    if not chosen:                          # the first time: whichever it got is the workspace's from now on
+        ws.remember(port=srv.server_address[1])
+    return srv
+
+
+def serving(ws, port):
+    """Whether this workspace is already served on a port, by another process."""
+    try:
+        with urllib.request.urlopen('http://localhost:%d%s' % (port, Handler.WHO), timeout=1) as r:
+            return json.loads(r.read().decode('utf-8')).get('workspace') == ws.root
+    except (OSError, ValueError, AttributeError):
+        return False
 
 
 def background(ws=None):
-    """Serve a workspace from a thread, on any free port; returns its URL.
-    For a process that has other work to do, such as the agent tools."""
-    srv = start(ws, 0)
+    """Serve a workspace from a thread on its own port; returns its URL.
+    For a process that has other work to do, such as the agent tools. Where
+    another process serves this workspace on its port already, that one is
+    the address, and nothing more is started."""
+    ws = ws or Workspace()
+    kept = ws.settings().get('port')
+    if isinstance(kept, int) and serving(ws, kept):
+        return 'http://localhost:%d/' % kept
+    srv = start(ws)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return 'http://localhost:%d/' % srv.server_address[1]
 
 
-def serve(ws=None, port=8765):
-    """Serve a workspace's build/ on localhost until interrupted."""
+def serve(ws=None, port=None):
+    """Serve a workspace's build/ on localhost until interrupted: on its
+    own port, unless another is given."""
     ws = ws or Workspace()
     with start(ws, port) as srv:
-        print('http://localhost:%d/  —  marks are saved in %s/<house>/marks.json' % (port, ws.houses))
+        print('http://localhost:%d/  —  marks are saved in %s/<house>/marks.json' % (srv.server_address[1], ws.houses))
         try:
             srv.serve_forever()
         except KeyboardInterrupt:

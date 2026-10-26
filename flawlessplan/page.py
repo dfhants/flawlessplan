@@ -12,7 +12,7 @@ import os
 import re
 import shutil
 from urllib.parse import quote
-from . import render, report
+from . import __version__, render, report
 
 VARS = {'INK': 'var(--ink)', 'SOFT': 'var(--ink-soft)', 'FLOOR': 'var(--floor)',
         'FIT': 'var(--fit)', 'RED': 'var(--red)', 'BLUE': 'var(--blue)', 'GRID': 'var(--grid)'}
@@ -174,7 +174,8 @@ def markup(title, sheets, root=None, send=None, hidden=(), version=None, under=N
              'INFOS': '\n'.join(panel(s[0], s[4]) for s in sheets),
              'CSS': asset('page.css').replace('__DRAWING__', render.css(VARS, 'svg.draw')),
              'JS': _fill(asset('page.js'), js),
-             'ICON': icon(root), 'FONTS': fonts(root), 'HOME': home, 'SEND': source + send}
+             'ICON': icon(root), 'FONTS': fonts(root), 'HOME': home, 'SEND': source + send,
+             'VER': render.esc(__version__)}
     # the template is its head — title, icon, faces, styles — then a blank line, then its body
     head, body = _fill(asset('page.html'), parts).split('\n\n<header', 1)
     return ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'

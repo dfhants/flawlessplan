@@ -37,7 +37,7 @@ flawlessplan crop  HOUSE ground --under        # its source drawing faint over i
 flawlessplan crop  HOUSE ground --under plan.png --scale 58.7 --at 0 0   # or a picture named here
 flawlessplan at    HOUSE ground 2.0 8.1
 flawlessplan snapshot HOUSE                # rewrite its expected.json
-flawlessplan serve                         # the pages, saving what is drawn on them
+flawlessplan serve                         # the pages, saving what is drawn on them, at the workspace's own address
 flawlessplan marks HOUSE [--all] [--sheet S]   # lay out what was drawn and is still open, for reading
 flawlessplan resolve HOUSE ID ... --note HOW --checked LOOK   # reply: resolved, on a look after the change
 flawlessplan resolve HOUSE ID --state blocked --note WHY       # or blocked, or --state question

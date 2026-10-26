@@ -20,6 +20,10 @@ __SEND__  <button id="notes" class="toggle" aria-label="Sheet notes" aria-expand
     <span>Sheet notes</span>
   </button>
 </header>
+<div class="lost" id="lost" role="alert" hidden>
+  <strong>Lost the connection to Flawlessplan.</strong>
+  <span>This page is no longer kept up to date, and what you draw now is not saved. Ask Claude to show the house again for its address.</span>
+</div>
 
 <main class="work">
   <div class="stages" id="stages">
@@ -67,5 +71,6 @@ __INFOS__
   <span class="state"><span class="dot" id="dot"></span><span id="status" role="status" aria-live="polite">Connecting…</span></span>
   <span id="count">0 marks</span>
   <span id="pos">0.00, 0.00 m</span>
+  <span class="ver" title="The version of Flawlessplan that drew this page">Flawlessplan __VER__</span>
 </footer>
 <script>__JS__</script>

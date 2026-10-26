@@ -160,9 +160,9 @@ def test_check_holds_a_house_to_its_snapshot(tmp_path, capsys):
 
 def test_an_empty_folder_can_be_set_up_from_the_tools(tmp_path, monkeypatch):
     monkeypatch.setattr(mcp, 'WS', Workspace(str(tmp_path)))
-    assert mcp.list_houses() == []
+    assert mcp.list_houses()['houses'] == []
     assert 'cottage' in mcp.init_workspace()
-    assert [h['house'] for h in mcp.list_houses()] == ['bungalow', 'cottage']
+    assert [h['house'] for h in mcp.list_houses()['houses']] == ['bungalow', 'cottage']
     assert mcp.init_workspace().startswith('already a workspace')
 
 
@@ -189,7 +189,7 @@ def test_a_house_is_made_and_changed_with_nothing_but_the_tools(houses):
     assert '# Starting a house' in said and '| `envelope` |' in said and 'name: Bungalow' in said
     got = mcp.write_house('ell', L_HOUSE)
     assert got['did'] == 'made' and got['sheets'] == ['ground'] and got['changed'] == []
-    assert 'ell' in [h['house'] for h in mcp.list_houses()] and mcp.read_house('ell')['text'] == L_HOUSE
+    assert 'ell' in [h['house'] for h in mcp.list_houses()['houses']] and mcp.read_house('ell')['text'] == L_HOUSE
     wall = "    walls:\n      - {id: split, from: [W - wing_w, 0], to: [W - wing_w, main_d]}\n    rooms:\n"
     got = mcp.edit_house('ell', '    rooms:\n', wall)
     assert got['did'] == 'edited' and any('no room in it' in i for i in got['issues'])
@@ -301,7 +301,7 @@ def test_a_broken_house_file_is_not_kept_and_is_said_as_a_refusal(houses, case):
                  lambda h: mcp.crop(h, 'ground'), lambda h: mcp.set_measurement(h, 'W', 9), lambda h: mcp.settle_note(h, 'ground', 'x')):
         with pytest.raises(mcp.ToolError):
             mcp._quiet(tool)('broken')
-    listed = dict((h['house'], h) for h in mcp.list_houses())
+    listed = dict((h['house'], h) for h in mcp.list_houses()['houses'])
     assert 'error' in listed['broken'] and 'sheets' in listed['cottage']        # listed, with what is wrong with it
     assert mcp.read_house('broken')['text'] == BROKEN[case]                             # and it can still be read, to be put right
 
@@ -430,7 +430,7 @@ def test_check_gives_the_worst_first(houses):
 
 def test_a_private_house_is_listed_drawn_and_sent_on_this_machine_only(houses):
     mcp.write_house('secret', 'house: {name: Secret Lodge, private: true}\n' + ROOM)
-    assert 'secret' in [h['house'] for h in mcp.list_houses()]
+    assert 'secret' in [h['house'] for h in mcp.list_houses()['houses']]
     assert open(mcp.share('secret')).read().count('<title>Secret Lodge</title>') == 1      # the owner's to send
     url = mcp.show('secret')
     assert url.split()[0].endswith('/secret/') and os.path.isdir(str(houses.parent / 'build' / 'secret'))
@@ -559,13 +559,13 @@ def test_an_agent_puts_sheets_in_order_and_hides_them_and_cannot_bin_one(houses)
     v = mcp.read_house('bungalow')['version']
     out = mcp.order_sheets('bungalow', ['bare', 'ground', 'infill'], version=v)
     assert out['house'] == 'bungalow' and out['sheets'] == ['bare', 'ground', 'infill'] and out['version'] != v
-    assert [s['id'] for s in mcp.list_houses()[0]['sheets']] == ['bare', 'ground', 'infill']
+    assert [s['id'] for s in mcp.list_houses()['houses'][0]['sheets']] == ['bare', 'ground', 'infill']
     with pytest.raises(mcp.ToolError, match='infill must come after ground'):
         mcp.order_sheets('bungalow', ['infill', 'ground'])
     with pytest.raises(mcp.ToolError, match='is not as it was at version'):
         mcp.hide_sheet('bungalow', 'bare', version=v)
     hid = mcp.hide_sheet('bungalow', 'bare')
-    assert hid['did'] == 'hidden' and [(s['id'], s['hidden']) for s in mcp.list_houses()[0]['sheets']] == [('bare', True), ('ground', False), ('infill', False)]
+    assert hid['did'] == 'hidden' and [(s['id'], s['hidden']) for s in mcp.list_houses()['houses'][0]['sheets']] == [('bare', True), ('ground', False), ('infill', False)]
     assert 'BARE' not in open(mcp.share('bungalow')).read() and mcp.check('bungalow')                # not sent; still checked
     assert mcp.sheet_report('bungalow', 'bare')['sheets'][0]['hidden'] is True
     assert mcp.hide_sheet('bungalow', 'bare', hidden=False)['did'] == 'shown again'
@@ -633,7 +633,7 @@ def test_what_was_built_is_set_beside_what_was_drawn(houses):
 def test_the_sheet_a_sheet_extends_is_listed_and_reported(houses):
     text = mcp.read_house('bungalow')['text']
     mcp.write_house('bungalow', text + '  - id: bare\n    extends: infill\n    omit: [wing_old]\n    unlabelled: ok\n')
-    listed = [h for h in mcp.list_houses() if h['house'] == 'bungalow'][0]['sheets']
+    listed = [h for h in mcp.list_houses()['houses'] if h['house'] == 'bungalow'][0]['sheets']
     assert [(s['id'], s['changes'], s['extends']) for s in listed] == [('ground', None, None), ('infill', 'ground', None), ('bare', 'ground', 'infill')]
     rep = mcp.sheet_report('bungalow', 'bare')['sheets'][0]
     assert rep['extends'] == 'infill' and rep['changes'] == 'ground' and 'wing_old' not in [o['wall'] for o in rep['openings']]
@@ -816,9 +816,31 @@ def test_a_change_given_the_version_it_writes_over_is_refused_when_the_file_has_
     assert mcp.set_measurement('ell', 'W', 9.5)['version'] == mcp.read_house('ell')['version']
     with pytest.raises(mcp.ToolError, match='no house nowhere-yet for that to be a version of'):
         mcp.write_house('nowhere-yet', L_HOUSE, version=read['version'])
-    assert 'nowhere-yet' not in [h['house'] for h in mcp.list_houses()]
+    assert 'nowhere-yet' not in [h['house'] for h in mcp.list_houses()['houses']]
 
 
 def test_a_change_with_no_version_is_made_as_it_always_was(houses):
     mcp.write_house('ell', L_HOUSE)
     assert mcp.edit_house('ell', 'name: Ell', 'name: Elm')['did'] == 'edited' and mcp.write_house('ell', L_HOUSE)['did'] == 'replaced'
+
+
+def test_the_tools_say_which_version_they_are(houses):
+    from flawlessplan import __version__
+    assert mcp.list_houses()['flawlessplan'] == __version__
+    assert mcp.guide().startswith('Flawlessplan %s.' % __version__)
+    assert mcp.make()._lowlevel_server.version == __version__                       # what the server tells Claude it is
+
+
+def test_a_changed_page_address_is_said_with_every_answer_until_it_is_shown(houses, monkeypatch):
+    told = mcp._told(lambda: {'house': 'x'})
+    assert told() == {'house': 'x'}                                     # no pages yet: nothing to say
+    monkeypatch.setitem(mcp.PAGES, mcp.WS.root, 'http://localhost:9001/')
+    assert told() == {'house': 'x'}                                     # never given out: nothing has changed
+    mcp.WS.remember(given='http://localhost:8765/')
+    said = 'the page address has changed from http://localhost:8765/ to http://localhost:9001/ — tell the owner now'
+    assert told()['page_address'].startswith(said)
+    assert mcp._told(lambda: 'nothing found')().split('\n')[1].startswith(said)
+    assert mcp._told(lambda: ['a'])()[1].startswith(said)
+    monkeypatch.setattr(mcp.cli, 'build_all', lambda ws: ([], []))
+    assert mcp.show().startswith('http://localhost:9001/') and mcp.WS.settings()['given'] == 'http://localhost:9001/'
+    assert told() == {'house': 'x'}                                     # shown: said no more

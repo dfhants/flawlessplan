@@ -368,12 +368,21 @@ def test_it_listens_on_this_machine_only(ws):
         srv.server_close()
 
 
-def test_a_workspace_can_be_served_from_a_thread_on_any_free_port(ws):
+def test_a_workspace_keeps_its_port_and_a_second_process_finds_the_first(ws, tmp_path):
     cli.build_all(ws)
-    a, b = server.background(ws), server.background(ws)
-    assert a != b and a.startswith('http://localhost:') and a.endswith('/')
+    a = server.background(ws)
     port = int(a.rsplit(':', 1)[1].strip('/'))
+    assert a.startswith('http://localhost:') and ws.settings()['port'] == port         # chosen once, and kept
     assert ask(port, 'GET', '/bungalow/')[0] == 200
+    assert server.background(ws) == a                                                   # served already: the same address
+    other = Workspace(str(tmp_path / 'other'))
+    other.remember(port=port)                                                           # its port, taken by someone else's pages
+    srv = server.start(other)
+    try:
+        assert srv.server_address[1] != port and other.settings()['port'] == port       # another for now; its own is kept
+    finally:
+        srv.server_close()
+    assert not server.serving(other, port) and server.serving(ws, port)
 
 
 def test_serving_makes_the_folder_it_serves(tmp_path):
@@ -383,3 +392,12 @@ def test_serving_makes_the_folder_it_serves(tmp_path):
         assert os.path.isdir(ws.build)
     finally:
         srv.server_close()
+
+
+def test_a_page_says_when_it_has_lost_its_server_and_which_version_drew_it(ws):
+    from flawlessplan import __version__
+    cli.build_all(ws)
+    page = open(os.path.join(ws.build, 'cottage', 'index.html')).read()
+    assert '<div class="lost" id="lost" role="alert" hidden>' in page and 'Lost the connection to Flawlessplan.' in page
+    assert '>Flawlessplan %s</span>' % __version__ in page
+    assert '.flawlessplan.json' in open(os.path.join(ws.root, '.gitignore')).read()

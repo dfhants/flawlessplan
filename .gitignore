@@ -13,3 +13,4 @@ flawlessplan/examples/*/marks.json
 houses/*/.versions/
 flawlessplan/examples/*/.versions/
 houses/*/house.draft.yaml
+.flawlessplan.json
