@@ -303,12 +303,14 @@ def test_ink_that_lies_together_shares_a_picture():
     assert [len(f) for f in marks.frames(bridge)] == [3]                # a third stroke between two joins all three
 
 
-def test_the_ink_is_drawn_in_its_own_colour_and_text_is_escaped():
+def test_the_ink_is_drawn_in_its_own_colour_and_text_is_escaped(tmp_path):
     S = marks.strokes([{'type': 'pen', 'ts': 1, 'pts': [[1, 1], [2, 2]]},
                        {'type': 'note', 'ts': 2, 'x': 3, 'y': 3, 'text': '</text><script>alert(1)</script>'}], 'g')
     svg = '\n'.join(marks.ink(S, 4.0))
-    assert svg.count('<polyline') == 1 and svg.count(marks.INK) == 2 and svg.count(marks.NOTE) == 5
-    assert '<script>' not in svg and '&lt;/text&gt;&lt;script&gt;alert(1)&lt;/script&gt;' in svg
+    assert svg.count('<polyline') == 1 and svg.count(marks.INK) == 2 and svg.count(marks.NOTE) == 3
+    assert 'script' not in svg                                          # what a comment says is beside the picture, not on it
+    beside = open(marks.panels(str(tmp_path / 'p.svg'), [], (0, 0, 4, 4), S, 'x')).read()
+    assert '<script>' not in beside and '&lt;/text&gt;&lt;script&gt;alert(1)&lt;/script&gt;' in beside
     assert marks.INK not in ''.join(SHEET.lines) and marks.NOTE not in ''.join(SHEET.lines)      # no drawing uses either
 
 
@@ -368,14 +370,18 @@ def test_marks_are_resolved_all_or_none_and_say_how(tmp_path):
         with pytest.raises(ValueError, match=why):
             marks.resolve(path, ids, note, sheets, ['ground', 'first'])
         assert json.load(open(path)) == LIFE
-    said = marks.resolve(path, ['wider', 'mmgfvhedc'], ' Living room\n widened ', ['ground', 'first'], ['ground', 'first'])
-    assert said == ['wider: resolved, applied to ground, first', 'mmgfvhedc: resolved, applied to ground, first']
+    with pytest.raises(ValueError, match='sheets is per mark'):                       # one list for several marks says nothing of which
+        marks.resolve(path, ['wider', 'mmgfvhedc'], 'done', ['ground', 'first'], ['ground', 'first'])
+    with pytest.raises(ValueError, match="sheets names 'nope', which is not among"):
+        marks.resolve(path, ['wider'], 'done', {'nope': ['first']}, ['ground', 'first'])
+    said = marks.resolve(path, ['wider', 'mmgfvhedc'], ' Living room\n widened ', {'wider': ['ground', 'first']}, ['ground', 'first'])
+    assert said == ['wider: resolved, applied to ground, first', 'mmgfvhedc: resolved']
     got = json.load(open(path))
     assert [(m.get('id'), m.get('status'), m.get('how'), m.get('applied')) for m in got] == [
-        ('mmgfvhedc', 'resolved', 'Living room widened', ['ground', 'first']),
+        ('mmgfvhedc', 'resolved', 'Living room widened', None),
         ('wider', 'resolved', 'Living room widened', ['ground', 'first']), (None, None, None, None)]
     assert got[0]['resolved'] > 1759800000000 and got[0]['pts'] == LIFE[0]['pts'] and got[2] == LIFE[2]
-    assert marks.resolve(path, 'wider', 'again', known=['ground']) == ['wider: resolved (it was already; now as this says)']
+    assert marks.resolve(path, 'wider', 'again', known=['ground']) == ['wider: resolved (it was resolved; now as this says)']
     assert 'applied' not in json.load(open(path))[1]
     assert marks.resolve(path, ['wider', 'mmgfvhlbc'], '', reopen=True) == ['wider: opened again', 'mmgfvhlbc: was open already']
     assert [set(m) & set(marks.LIFE) for m in json.load(open(path))][1:] == [set(), set()]
@@ -388,12 +394,12 @@ def test_only_open_marks_are_laid_out_unless_the_resolved_are_asked_for(tmp_path
     s = solve.solves(BOX)
     drawn = [dict(LIFE[0], status='resolved', resolved=1759800100000, how='moved the <door>', applied=['ground', 7]),
              LIFE[1], dict(LIFE[2], status='done')]                                 # a status that is not one is open
-    assert [(m['id'], m['n'], m['done']) for m in marks.strokes(drawn, 'ground')] == [('wider', 1, False), ('mmgfvhlbc', 2, False)]
+    assert [(m['id'], m['n'], m['done']) for m in marks.strokes(drawn, 'ground')] == [('wider', 2, False), ('mmgfvhlbc', 3, False)]     # numbered among every mark: one never moves
     S = marks.strokes(drawn, 'ground', done=True)
     assert [(m['id'], m['n'], m['done'], m['how'], m['applied']) for m in S][0] == ('mmgfvhedc', 1, True, 'moved the <door>', ['ground'])
     out = str(tmp_path / 'marks')
     text = marks.brief(s.house, s.sheets, drawn, out, cli.rasterise)
-    assert '1 mark already resolved is left out' in text and 'mmgfvhedc' not in text and '- **1** `wider` written' in text
+    assert '1 mark already resolved is left out' in text and 'mmgfvhedc' not in text and '- **2** `wider` written' in text
     assert marks.DONE not in open(os.path.join(out, 'ground-sheet.svg')).read()
     text = marks.brief(s.house, s.sheets, drawn, out, cli.rasterise, done=True)
     assert 'left out' not in text and '- **1** `mmgfvhedc` stroke' in text and '- **2** `wider` written' in text

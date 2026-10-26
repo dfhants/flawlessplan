@@ -30,16 +30,24 @@ that `changes` another. They live in `flawlessplan/examples/`.
 
 ```
 flawlessplan build [HOUSE ...] [--png]     # no house: all of them, and the index
-flawlessplan check HOUSE
+flawlessplan check HOUSE                   # ends with a look id, as every crop does
 flawlessplan crop  HOUSE ground 2.8 10.5 5.4 14.3
 flawlessplan crop  HOUSE ground --ids ID ...   # what was built, beside those marks as drawn
+flawlessplan crop  HOUSE ground --under        # its source drawing faint over it (`underlay:`)
+flawlessplan crop  HOUSE ground --under plan.png --scale 58.7 --at 0 0   # or a picture named here
 flawlessplan at    HOUSE ground 2.0 8.1
 flawlessplan snapshot HOUSE                # rewrite its expected.json
 flawlessplan serve                         # the pages, saving what is drawn on them
 flawlessplan marks HOUSE [--all] [--sheet S]   # lay out what was drawn and is still open, for reading
-flawlessplan resolve HOUSE ID ... --note HOW   # close marks that have been built in
+flawlessplan resolve HOUSE ID ... --note HOW --checked LOOK   # reply: resolved, on a look after the change
+flawlessplan resolve HOUSE ID --state blocked --note WHY       # or blocked, or --state question
+flawlessplan resolve HOUSE A B --sheets A=ground,infill ...     # the sheets each was applied to, by mark
 flawlessplan share HOUSE                   # one file to send: every sheet, to be read
 ```
+
+Where a sheet names the picture it was traced from (`underlay:`), the
+page has a Source button that sets it faint over the sheet. It is copied
+beside the page in `build/` only: never into `public/` or the file sent.
 
 Each house gets one SVG per sheet with its notes beside it as `<sheet>.md`,
 `report.json` (room sizes, openings, notes, problems found), and
@@ -70,7 +78,7 @@ still solves, and a sheet stays after the one it changes or extends. What
 was drawn on a binned sheet stays in `marks.json`.
 
 The tools float on the drawing: Draw,
-Text (click the plan, type, Enter), Pan, then Undo, Redo and Clear — this
+Comment (click for a numbered pin, drag for a box, then type and Enter), Pan, then Undo, Redo and Clear — this
 sheet or every sheet, and Undo brings a clear back. Keys: `D` `T` `H` for the
 tools, Space held to pan, ⌘Z / ⇧⌘Z, `+` `−` `0` to zoom and fit, `1`–`9` for
 the sheets.
@@ -80,10 +88,26 @@ the sheets.
 Served by `flawlessplan serve`, what you draw and write on a page is saved
 to `houses/<house>/marks.json` as you go and is still there after a reload
 or a rebuild. `flawlessplan marks HOUSE` lays it out for reading — pictures
-of two panels, the drawing and the drawing with the ink, and the strokes in
+of two panels, the drawing and the drawing with the ink, and the marks in
 order. It does not interpret.
 
-A mark has a life. It is open until whoever built it into the plan says so
+A comment is a numbered pin or a box; its words are in the list under the
+sheet's notes and beside the pictures, never over the drawing. When it is
+saved the server writes on it what it is on — its room, and the doors,
+walls and fittings at the pin or in the box — and the version of the house
+file it was made on, and keeps that version in `houses/<house>/.versions/`.
+`marks` hands both back with it, and where the file has changed since,
+sets the drawing it was made on beside the drawing now.
+
+The agent replies to each mark (`flawlessplan resolve`, the
+`resolve_marks` tool), and the reply is under the mark on the page. It
+says what the mark now is: resolved — built in, which takes the look id a
+`crop` or `check` answered with after the change, so nothing is closed on
+an edit nobody looked at — blocked (it needs the engine changed, or
+information), or a question for you. Blocked marks and questions stay in
+sight, in blue. Reply to any of them yourself and it is open again.
+
+A mark has a life. It is open until whoever built it into the plan replies
 (`flawlessplan resolve`, or the `resolve_marks` tool); then it is resolved:
 kept in `marks.json` with when and how it was dealt with, but no longer laid
 out by `marks` (`--all` brings resolved ones back, in grey; `--sheet` is one

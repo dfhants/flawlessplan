@@ -275,7 +275,7 @@ def test_what_an_edit_changed_includes_what_is_not_measured(houses):
 
 def test_a_whole_sheet_can_be_seen(houses):
     said, picture = mcp.crop('cottage', 'ground')
-    assert said == 'cottage · ground · the whole sheet' and os.path.getsize(picture.path) > 10000
+    assert re.match(r'^cottage · ground · the whole sheet · look look-[0-9a-f]{8}$', said) and os.path.getsize(picture.path) > 10000
     with pytest.raises(mcp.ToolError, match='leave all four out'):
         mcp.crop('cottage', 'ground', 1.0, 1.0)
 
@@ -393,7 +393,7 @@ def test_a_box_half_given_or_inside_out_is_refused(houses, box):
 
 def test_a_close_picture_says_what_it_is_of(houses):
     said, picture = mcp.crop('cottage', 'ground', 2.8, 4.0, 6.0, 7.5)
-    assert said == 'cottage · ground · x 2.80–6.00, y 4.00–7.50 m' and open(picture.path, 'rb').read(4) == b'\x89PNG'
+    assert said.startswith('cottage · ground · x 2.80–6.00, y 4.00–7.50 m · look ') and open(picture.path, 'rb').read(4) == b'\x89PNG'
     for sheet, why in (('attic', "no sheet called 'attic'"), ('outline', "no sheet called 'outline'")):
         with pytest.raises(ValueError, match=why):
             mcp.crop('cottage', sheet)
@@ -417,14 +417,15 @@ def test_a_report_can_be_of_one_sheet_or_brief(houses):
     assert 'source' not in brief and all('openings' not in f and 'notes' not in f and 'rooms' in f for f in brief['sheets'])
     with pytest.raises(mcp.ToolError, match="no sheet called 'attic'"):
         mcp.sheet_report('cottage', 'attic')
-    said = mcp.check('cottage')
-    assert said == 'nothing found' or all(': info ' in line for line in said.split('\n'))
+    said, seen = mcp.check('cottage').rsplit('\n', 1)
+    assert (said == 'nothing found' or all(': info ' in line for line in said.split('\n'))) and seen.startswith('look look-')
 
 
 def test_check_gives_the_worst_first(houses):
     mcp.write_house('gap', ROOM + "      - {name: OTHER, at: [7, 5]}\n    walls: [{id: stub, from: [4, 0], to: [4, 3]}]\n")
     said = mcp.check('gap').split('\n')
-    assert said[0].startswith('ground: error') and 'the same space' in said[0] and said[-1].startswith('ground: info')
+    assert said[0].startswith('ground: error') and 'the same space' in said[0] and said[-2].startswith('ground: info')
+    assert re.match(r'^look look-[0-9a-f]{8}$', said[-1])                  # the look a mark is resolved on
 
 
 def test_a_private_house_is_listed_drawn_and_sent_on_this_machine_only(houses):
@@ -451,6 +452,27 @@ def test_marks_come_back_as_the_brief_and_each_picture_it_speaks_of(houses):
     assert rest[0].endswith('ground-1.png') and rest[2].endswith('ground-sheet.png') and os.path.exists(rest[1].path)
 
 
+def seen(house):
+    """A look at a house as it is now: its checks, read."""
+    return mcp.check(house).rsplit('look ', 1)[1]
+
+
+def test_a_change_to_a_house_with_open_marks_says_they_come_first(houses):
+    got = mcp.set_measurement('bungalow', 'main_w', 10.5)
+    assert 'open_marks' not in got                                  # nothing drawn: nothing said
+    json.dump([{'type': 'note', 'sheet': 'ground', 'ts': 1759800005000, 'x': 3, 'y': 3, 'text': 'wider', 'id': 'wider'},
+               {'type': 'pen', 'sheet': 'ground', 'ts': 1, 'pts': [[2, 2], [3, 3]], 'status': 'resolved'}],
+              open(str(houses / 'bungalow' / 'marks.json'), 'w'))
+    text = mcp.read_house('bungalow')
+    for got in (mcp.edit_house('bungalow', 'main_w: 10.5', 'main_w: 10.2', version=text['version']),
+                mcp.write_house('bungalow', mcp.read_house('bungalow')['text'], version=mcp.read_house('bungalow')['version']),
+                mcp.set_measurement('bungalow', 'main_w', 10.5)):
+        assert got['open_marks'] == ('1 mark still open on bungalow (wider): read them with `marks` and act on them, '
+                                     'or ask about them, before building or changing any sheet')
+    mcp.resolve_marks('bungalow', ['wider'], 'wider now', checked=seen('bungalow'))
+    assert 'open_marks' not in mcp.set_measurement('bungalow', 'main_w', 11.0)
+
+
 def test_marks_built_in_are_closed_and_no_longer_sent(houses):
     dest = str(houses / 'cottage' / 'marks.json')
     json.dump([{'type': 'pen', 'sheet': 'ground', 'ts': 1759800000000, 'pts': [[2, 2], [2.5, 2.5], [3, 2]]},
@@ -463,14 +485,16 @@ def test_marks_built_in_are_closed_and_no_longer_sent(houses):
         tool(mcp.resolve_marks)('cottage', ['mmgfvhedc'], 'done', ['attic'])
     with pytest.raises(mcp.ToolError, match="no sheet called 'attic'"):
         tool(mcp.marks)('cottage', sheet='attic')
-    assert mcp.resolve_marks('cottage', ['mmgfvhedc'], 'The door is hung the other way.', ['ground', 'first']) \
+    with pytest.raises(mcp.ToolError, match='a mark is resolved on a look'):
+        tool(mcp.resolve_marks)('cottage', ['mmgfvhedc'], 'done')
+    assert mcp.resolve_marks('cottage', ['mmgfvhedc'], 'The door is hung the other way.', ['ground', 'first'], checked=seen('cottage')) \
         == 'mmgfvhedc: resolved, applied to ground, first'
     brief, *rest = mcp.marks('cottage')
     assert len(rest) == 4 and 'mmgfvhedc' not in brief and '1 mark already resolved is left out' in brief
     assert mcp.marks('cottage', sheet='ground') == ['cottage, sheet ground: nothing still open — 1 resolved (ask for resolved marks to see them)']
     brief, *rest = mcp.marks('cottage', include_resolved=True, sheet='ground')
     assert len(rest) == 4 and 'The door is hung the other way. — applied to `ground`, `first`' in brief
-    mcp.resolve_marks('cottage', ['mmgfvhi88'], 'Made smaller.')
+    mcp.resolve_marks('cottage', ['mmgfvhi88'], 'Made smaller.', checked=seen('cottage'))
     assert mcp.marks('cottage') == ['cottage: nothing still open — 2 resolved (ask for resolved marks to see them)']
     assert mcp.resolve_marks('cottage', ['mmgfvhi88'], '', reopen=True) == 'mmgfvhi88: opened again'
     assert len(mcp.marks('cottage')) == 5
@@ -590,15 +614,16 @@ def test_what_was_built_is_set_beside_what_was_drawn(houses):
     """Marks drawn on one sheet, resolved, and shown on another they were applied to."""
     json.dump([{'type': 'pen', 'sheet': 'ground', 'ts': 1759800000000, 'pts': [[2, 2], [2.5, 2.5], [3, 2]]},
                {'type': 'note', 'sheet': 'ground', 'ts': 1759800005000, 'x': 3, 'y': 3, 'text': 'wider'}], open(str(houses / 'bungalow' / 'marks.json'), 'w'))
-    mcp.resolve_marks('bungalow', ['mmgfvhedc', 'mmgfvhi88'], 'Made wider.', ['ground', 'infill'])
+    mcp.resolve_marks('bungalow', ['mmgfvhedc', 'mmgfvhi88'], 'Made wider.',
+                      {'mmgfvhedc': ['ground', 'infill'], 'mmgfvhi88': ['ground', 'infill']}, checked=seen('bungalow'))
     said, png = mcp.crop('bungalow', 'infill', mark_ids=['mmgfvhedc', 'mmgfvhi88'])
-    assert said == 'bungalow · infill · what was built, beside what was drawn: marks mmgfvhedc, mmgfvhi88'
+    assert said.startswith('bungalow · infill · what was built, beside what was drawn: marks mmgfvhedc, mmgfvhi88 · look ')
     svg = open(str(png.path)[:-4] + '.svg').read()
     assert 'WHAT WAS BUILT: THE DRAWING AS IT IS NOW' in svg and 'WHAT WAS DRAWN: THE SAME VIEW, WITH THE INK' in svg
     assert svg.count('<polyline') == 1 and '>wider</text>' in svg and '#D0199B' in svg and '#8A9590' not in svg    # the ink in its own colour
     assert 'x 1.25–3.75, y 1.25–3.75 m' in svg                             # framed round the marks
     said, png = mcp.crop('bungalow', 'infill', 1, 1, 5, 5, mark_ids=['mmgfvhedc'])
-    assert said == 'bungalow · infill · x 1.00–5.00, y 1.00–5.00 m' and 'WHAT WAS BUILT' in open(str(png.path)[:-4] + '.svg').read()
+    assert said.startswith('bungalow · infill · x 1.00–5.00, y 1.00–5.00 m · look ') and 'WHAT WAS BUILT' in open(str(png.path)[:-4] + '.svg').read()
     plain = open(str(mcp.crop('bungalow', 'ground', 1, 1, 5, 5, marks=True)[1].path)[:-4] + '.svg').read()
     assert '<polyline' not in plain and 'WHAT WAS BUILT' not in plain          # resolved: not on a crop that asks for the open ones
     with pytest.raises(ValueError, match="no mark called 'nope'"):
@@ -680,7 +705,7 @@ def test_a_house_file_is_kept_as_it_was_written(houses):
 def test_the_instructions_say_how_to_start_and_what_not_to_do():
     said = mcp.INSTRUCTIONS
     for must in ('call `guide` first', 'written down once', 'set_measurement', 'say back to the owner', 'x east and y south',
-                 'close it with `resolve_marks` in the same turn'):
+                 'reply to it with `resolve_marks` in the same turn'):
         assert must in said
     assert [name for _, name, _ in mcp.TOOLS] == ['list_houses', 'guide', 'init_workspace', 'check', 'report', 'show', 'share',
                                                  'measurements', 'at', 'crop', 'marks', 'resolve_marks', 'set_measurement', 'read_house',

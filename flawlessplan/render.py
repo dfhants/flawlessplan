@@ -18,6 +18,7 @@ AREAS = {'outdoor': (False, 'outdoorlabel'),        # roofed or paved, outside t
          'new': (False, 'rmname small muted'),      # floor gained, where a sheet says so by hand
          'zone': (True, 'rmname small muted'),      # a region marked out, where no one room is it
          'fitting': (True, 'rmname small muted')}   # worktops and the like: labels keep off them
+GARAGE = {'up': 2.0, 'roller': 0.30}    # how far in an up-and-over panel stands open overhead, and a roller's box
 # What free text may be set in, by what it is for.
 TEXT = {'name': 'rmname', 'small': 'rmname small', 'mini': 'rmname mini', 'note': 'rmarea sm',
         'zone': 'zonelabel'}
@@ -32,6 +33,8 @@ STYLE = """
 .fitting{fill:FIT;stroke:SOFT;stroke-width:4}
 .fitline{fill:none;stroke:SOFT;stroke-width:3}
 .rooflight{fill:none;stroke:SOFT;stroke-width:4;stroke-dasharray:14 9}
+.overhead{fill:none;stroke:SOFT;stroke-width:4;stroke-dasharray:14 9}
+.underlay{opacity:.55;mix-blend-mode:multiply;pointer-events:none}
 .gone{fill:none;stroke:RED;stroke-width:5;stroke-dasharray:16 11}
 .dr{stroke:INK;stroke-width:6;fill:none}
 .win{stroke:INK;stroke-width:5}
@@ -155,7 +158,9 @@ def draw(sheet):
             sh.out('<path d="%s" class="%s"/>' % (path(a['pts']), a['style']))
     for f in sorted(plan.fittings, key=lambda f: (fittings.ORDER + (f['kind'],)).index(f['kind'])):
         at = lambda p: geom._add(geom._add(f['o'], f['u'], p[0]), f['n'], p[1])
-        for part in fittings.symbol(f['kind'], f['w'], f['d'], f['label']):
+        for part in fittings.symbol(f['kind'], f['w'], f['d'], f['label'], f['bowls'], f['drain'], f.get('hearth') or (0, 0), f.get('opening')):
+            if part[0] != 'text' and not part[1]:
+                continue                            # drawn with the walls: a chimney breast
             if part[0] == 'text':
                 sh.text(geom._add(at(part[1]), (0, 0.07)), part[2], 'rmarea sm')
             else:
@@ -212,6 +217,16 @@ def draw(sheet):
             pts = [h.at(o['s0'] + (o['s1']-o['s0'])*i/float(n),
                         side*(-h.t/2.0 + (0.22 if i % 2 else 0.0))) for i in range(n+1)]
             sh.out('<path d="%s" class="fold"/>' % path(pts, close=False))
+        elif o['style'] in ('up', 'roller'):
+            # the door on its inside face; up-and-over, the panel overhead as
+            # it stands open; a roller, the box it rolls into
+            u = o['frame'][0]
+            k = 1.0 if geom._dot(o['inside'], (-u[1], u[0])) > 0 else -1.0
+            run(sh, h.run(o['s0'], o['s1'], k*h.t/2.0), 'dr')
+            deep = GARAGE[o['style']]
+            pts = [h.at(o['s0'], k*h.t/2.0), h.at(o['s0'], k*(h.t/2.0 + deep)),
+                   h.at(o['s1'], k*(h.t/2.0 + deep)), h.at(o['s1'], k*h.t/2.0)]
+            sh.out('<path d="%s" class="overhead"/>' % path(pts, close=False))
         for hinge, shut, side, w in o.get('leaves', []):
             tip, sweep, _ = geom.leaf_shape(hinge, shut, side, w)
             sh.line(hinge, tip, 'dr')
@@ -263,8 +278,14 @@ def draw(sheet):
         north = x1 + 1.05
     cx, cy = north*U, (y0 + 0.95)*U
     sh.out('<circle cx="%s" cy="%s" r="72" class="compass"/>' % (n2(cx), n2(cy)))
-    sh.out('<path d="M %s %s l -22 92 l 22 -20 l 22 20 Z" class="northarrow"/>' % (n2(cx), n2(cy-58)))
-    sh.text((north, y0 + 2.03), 'N', 'rmname small')
+    turn = house.get('north') or 0.0                # true north, clockwise from up the page
+    sh.out('<path d="M %s %s l -22 92 l 22 -20 l 22 20 Z" class="northarrow"%s/>'
+           % (n2(cx), n2(cy-58), ' transform="rotate(%s %s %s)"' % (n2(turn), n2(cx), n2(cy)) if turn else ''))
+    if turn:                                        # the letter past the arrow's tip
+        a = math.radians(turn)
+        sh.text((north + 1.0*math.sin(a), y0 + 0.95 - 1.0*math.cos(a) + 0.10), 'N', 'rmname small')
+    else:
+        sh.text((north, y0 + 2.03), 'N', 'rmname small')
     front, drop = house.get('front'), 0.0
     if front:
         word = 'FRONT (%s)' % front.upper()
@@ -289,6 +310,39 @@ def draw(sheet):
     vw = max(max(north + 1.42, dx1 + 0.5) - vx, tw(title, 'note') + (x0 - vx) + 0.4)
     vh = (dy1 - y0) + 1.7 + 0.85 + drop + 0.80
     return sh.buf, (vx*U, vy*U, vw*U, vh*U)
+
+
+def picture_size(data):
+    """A PNG's or a JPEG's width and height in pixels, from its header."""
+    import struct
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        return struct.unpack('>II', data[16:24])
+    if data[:2] == b'\xff\xd8':
+        i = 2
+        while i + 9 < len(data):
+            if data[i] != 0xFF:
+                break
+            kind, size = data[i+1], struct.unpack('>H', data[i+2:i+4])[0]
+            if kind in (0xC0, 0xC1, 0xC2):
+                h, w = struct.unpack('>HH', data[i+5:i+9])
+                return w, h
+            i += 2 + size
+    raise ValueError('not a PNG or a JPEG that can be read')
+
+
+def underlay(u, data, href=None, cls='underlay'):
+    """A sheet's source drawing as an SVG image, set where the house file
+    puts it: from its bytes, carried in as a data URI unless `href` says
+    where it is served from."""
+    w, h = picture_size(data)
+    if not href:
+        import base64
+        kind = 'png' if data[:4] == b'\x89PNG' else 'jpeg'
+        href = 'data:image/%s;base64,%s' % (kind, base64.b64encode(data).decode('ascii'))
+    x, y = u['at'][0]*U, u['at'][1]*U
+    turn = ' transform="rotate(%s %s %s)"' % (n2(u['rot']), n2(x), n2(y)) if u['rot'] else ''
+    return ('<image class="%s" href="%s" x="%s" y="%s" width="%s" height="%s" preserveAspectRatio="none"%s/>'
+            % (cls, esc(href), n2(x), n2(y), n2(w/u['scale']*U), n2(h/u['scale']*U), turn))
 
 
 def rooflight_label(r):

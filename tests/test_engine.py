@@ -120,6 +120,16 @@ def test_stair_counts_and_cuts():
     assert below['block'].area + above['block'].area == pytest.approx(whole, rel=0.02)
 
 
+def test_a_whole_flight_seen_from_above_points_down_it():
+    st = {'id': 's', 'path': [(1, 5), (1, 1), (3, 1)], 'width': [0.9]*2, 'treads': [8, 4], 'going': 0.25,
+          'turns': [0], 'cut': None, 'show': 'all', 'label': 'UP', 'where': 't'}
+    up, down = stairs.build(st), stairs.build(dict(st, label='DN'))
+    assert up['head'] == ((3, 1), (1.0, 0.0)) and up['walk'][0] == (1, 5)
+    assert down['head'] == ((1, 5), (-0.0, 1.0)) and down['walk'][0][0] == pytest.approx(2.7)    # from the head to the foot
+    assert down['walk'][1] == (1, 1) and down['walk'][-1] == pytest.approx((1, 4.82))
+    assert stairs.build(dict(st, ref='ground'))['head'] == down['head']             # on the level above, whatever it says
+
+
 def test_winders_reach_back_over_a_level_run():
     """The gap a banister leaves between two flights is part of the lowest
     winder when asked, not a strip of landing with an edge of its own."""
@@ -248,11 +258,30 @@ def test_a_sheet_says_which_level_it_draws():
         model.loads(CHANGED.replace('changes: ground', 'changes: attic'))
 
 
-def test_check_reports_a_label_with_nowhere_to_go():
+def test_a_label_with_nowhere_to_go_inside_goes_in_the_margin():
     tight = BOX.replace('{name: LEFT, at: [1, 1]}', '{name: LEFT, at: [1, 1]}').replace('W: 8.0, D: 6.0', 'W: 1.0, D: 0.9')
     tight = tight.replace('- {window: 1.2, at: [2.0, 0]}', '').replace("- {door: std, wall: split, at: centre, swing: e}", '')
-    issues = solve.solves(tight.replace('at: [7, 1]', 'at: [0.9, 0.5]').replace('at: [1, 1]', 'at: [0.4, 0.5]')).issues()
-    assert any('no clear place for the label' in m for _, _, m in issues)
+    s = solve.solves(tight.replace('at: [7, 1]', 'at: [0.9, 0.5]').replace('at: [1, 1]', 'at: [0.4, 0.5]'))
+    said = [(lv, m) for _, lv, m in s.issues() if 'label' in m]
+    assert said and all(lv == 'info' and 'margin' in m for lv, m in said)     # set outside with a line, not a fault
+    assert s.sheet('ground').leaders
+
+
+def test_a_label_sits_over_a_door_swing_before_it_leaves_its_room():
+    text = """survey: {W: 2.2, D: 1.8}
+sheets:
+  - id: ground
+    envelope: [{at: [0, 0], id: north}, {at: [W, 0], id: east}, {at: [W, D], id: south}, {at: [0, D], id: west}]
+    openings:
+      - {door: wide, wall: south, at: centre, swing: n}
+    rooms:
+      - {name: BATHROOM, at: [0.5, 0.5]}
+"""
+    sh = solve.solves(text).sheet('ground')
+    (items, x, y), = sh.labels
+    swing = geom.leaf_shape(*sh.plan.openings[0]['leaves'][0])[2]
+    assert any(labels.text_box((x+dx, y+dy), t, c, r).intersects(swing) for dx, dy, t, c, r in items)
+    assert not sh.leaders and not [m for _, m in sh.issues if 'label' in m]
 
 
 def test_a_label_can_stand_in_the_margin():
@@ -1447,7 +1476,7 @@ def test_a_rooflight_comes_from_a_part_and_is_left_out_by_id():
     text = LIT.replace('sheets:', 'levels: [ground]\nsheets:') + "  - id: dark\n    extends: ground\n    omit: [north_light]\n    notes: {}\n"
     dark = solve.solves(text).sheet('dark')
     assert [r['id'] for r in dark.plan.rooflights] == [None] and 'north_light_w' not in dark.names
-    with pytest.raises(model.ConfigError, match='a room, a stair or a rooflight by its `id`'):
+    with pytest.raises(model.ConfigError, match='a rooflight, a fitting or an area by its `id`'):
         solve.solves(text.replace('omit: [north_light]', 'omit: [south_light]'))
     assert [r['id'] for r in solve.solves(text.replace('omit: [north_light]', 'omit: [{rooflight: north_light}]')).sheet('dark').plan.rooflights] == [None]
 

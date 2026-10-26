@@ -19,11 +19,12 @@ import functools
 import os
 import re
 import sys
-from typing import Literal, Optional
+from typing import Literal, Optional, Union
 import yaml
 from mcp.server.mcpserver import MCPServer, Image
 from mcp.server.mcpserver.exceptions import ToolError as Refusal
 from . import cli, edit, model, query, report, server
+from . import marks as ink
 from .page import ASSETS
 from .solve import solve, house_file
 from .workspace import Workspace, EXAMPLES
@@ -37,6 +38,11 @@ with every room size measured from the geometry. Coordinates are metres, x east 
 To draw a house that is not there yet, call `guide` first and follow it: it is the procedure, every \
 key of a house file and two whole houses to copy from. Then `write_house` makes it. You need no other \
 access to the owner's machine.
+
+Marks come first. Before building or changing any sheet of a house that is already there, call \
+`marks` and act on what the owner has left open, or ask about it: it is what they asked for, and a \
+change made over it may undo it or be undone by it. A tool that changes a house says `open_marks` \
+while any are open.
 
 A dimension is written down once. To change a measured size use set_measurement; never work a \
 figure out and write it somewhere else. Anything structural — a wall, a door, a new sheet — is an \
@@ -59,7 +65,10 @@ read the ink as signs: strokes drawn seconds apart and touching are usually one 
 V are an arrow). Decide what a sign is about — an arrow its tip, a ring its inside — and only then \
 ask `at` what the plan has there. A mark says where and what, never why: say back to the owner what \
 you take each mark to mean before changing anything, and ask where the plan does not settle it. \
-Once a mark is built in, close it with `resolve_marks` in the same turn: `marks` then stops sending it."""
+A comment carries what it is on (`on:`) and the house version it was made on: read both before acting, \
+and where the version is not the file's now, check what it pointed at is still there. Once a mark is \
+built in, reply to it with `resolve_marks` in the same turn: the reply resolves it and the owner reads it \
+under the mark; an owner's reply on a resolved mark opens it again."""
 
 
 class ToolError(Refusal, ValueError):
@@ -104,7 +113,8 @@ def list_houses() -> list:
 def check(house: str) -> str:
     issues = solve(_house(house)).issues()
     order = sorted(issues, key=lambda i: report.LEVELS[i[1]])
-    return '\n'.join('%s: %-5s %s' % i for i in order) or 'nothing found'
+    seen = cli.look(_house(house), 'check', WS)
+    return ('\n'.join('%s: %-5s %s' % i for i in order) or 'nothing found') + '\nlook %s' % seen
 
 
 def sheet_report(house: str, sheet: Optional[str] = None, brief: bool = False) -> dict:
@@ -115,7 +125,7 @@ def sheet_report(house: str, sheet: Optional[str] = None, brief: bool = False) -
             raise ToolError('no sheet called %r' % sheet)
     if brief:
         del rep['source']
-        rep['sheets'] = [dict((k, v) for k, v in f.items() if k not in ('openings', 'fittings', 'rooflights', 'notes', 'title'))
+        rep['sheets'] = [dict((k, v) for k, v in f.items() if k not in ('openings', 'connections', 'stairs', 'sources', 'fittings', 'rooflights', 'notes', 'title'))
                          for f in rep['sheets']]
     return rep
 
@@ -132,16 +142,16 @@ def at(house: str, sheet: str, x: float, y: float, radius: Optional[float] = Non
 
 def crop(house: str, sheet: str, x0: Optional[float] = None, y0: Optional[float] = None,
          x1: Optional[float] = None, y1: Optional[float] = None, marks: bool = False,
-         mark_ids: Optional[list] = None) -> list:
+         mark_ids: Optional[list] = None, underlay: bool = False) -> list:
     box = (x0, y0, x1, y1)
     if all(v is None for v in box):
-        png = _png(cli.crop(_house(house), sheet, ink=bool(marks), ws=WS, ids=mark_ids))
-        return ['%s · %s · %s' % (house, sheet, 'what was built, beside what was drawn: marks %s' % ', '.join(mark_ids)
-                                  if mark_ids else 'the whole sheet'), png]
+        made = cli.crop(_house(house), sheet, ink=bool(marks), ws=WS, ids=mark_ids, under=bool(underlay))
+        return ['%s · %s · %s · look %s' % (house, sheet, 'what was built, beside what was drawn: marks %s' % ', '.join(mark_ids)
+                                            if mark_ids else 'the whole sheet', cli.LOOKED[made]), _png(made)]
     if None in box or x1 <= x0 or y1 <= y0:
         raise ToolError('give the box as x0 < x1 and y0 < y1, or leave all four out for the whole sheet')
-    png = cli.crop(_house(house), sheet, box, ink=bool(marks), ws=WS, ids=mark_ids)
-    return ['%s · %s · x %.2f–%.2f, y %.2f–%.2f m' % (house, sheet, x0, x1, y0, y1), _png(png)]
+    png = cli.crop(_house(house), sheet, box, ink=bool(marks), ws=WS, ids=mark_ids, under=bool(underlay))
+    return ['%s · %s · x %.2f–%.2f, y %.2f–%.2f m · look %s' % (house, sheet, x0, x1, y0, y1, cli.LOOKED[png]), _png(png)]
 
 
 def marks(house: str, include_resolved: bool = False, sheet: Optional[str] = None) -> list:
@@ -155,8 +165,9 @@ def marks(house: str, include_resolved: bool = False, sheet: Optional[str] = Non
     return out
 
 
-def resolve_marks(house: str, ids: list, note: str, sheets: Optional[list] = None, reopen: bool = False) -> str:
-    return '\n'.join(cli.resolve(_house(house), ids, note, sheets, bool(reopen)))
+def resolve_marks(house: str, ids: list, note: str, sheets: Optional[Union[dict, list]] = None, reopen: bool = False,
+                  state: Literal['resolved', 'blocked', 'question'] = 'resolved', checked: Optional[str] = None) -> str:
+    return '\n'.join(cli.resolve(_house(house), ids, note, sheets, bool(reopen), state, checked, WS))
 
 
 def show(house: Optional[str] = None, sheet: Optional[str] = None) -> str:
@@ -215,6 +226,31 @@ _version = edit.version
 _same = _said(edit.same)
 
 
+def open_marks(house):
+    """The ids of the marks still open on a house: what its owner has asked
+    for and nobody has answered."""
+    try:
+        drawn = cli.drawn_on(_house(house))
+    except (ToolError, ValueError):
+        return []
+    return [m['id'] for m in ink.strokes(drawn, '') if not m['done']]
+
+
+def _marks_first(fn):
+    """A tool that changes a house says so when the owner has marks on it
+    still open: those come first, before any sheet is built or changed."""
+    @functools.wraps(fn)
+    def run(house, *a, **k):
+        out = fn(house, *a, **k)
+        ids = open_marks(house)
+        if ids and isinstance(out, dict):
+            out['open_marks'] = ('%d mark%s still open on %s (%s): read them with `marks` and act on them, or ask '
+                                 'about them, before building or changing any sheet'
+                                 % (len(ids), '' if len(ids) == 1 else 's', house, ', '.join(ids)))
+        return out
+    return run
+
+
 def read_house(house: str) -> dict:
     with open(house_file(_house(house))) as fh:
         text = fh.read()
@@ -231,10 +267,10 @@ def measurements(house: str) -> dict:
 
 # ---- writing
 
-def _rewrite(path, text):
+def _rewrite(path, text, dry=False):
     """Replace a house file, or make it, by the one way in: kept only if
-    it solves, and its pages drawn again."""
-    return _said(edit.rewrite)(path, text, WS)
+    it solves, and its pages drawn again; with `dry`, only solved."""
+    return _said(edit.rewrite)(path, text, WS, dry)
 
 
 _moved = edit.moved
@@ -243,7 +279,8 @@ _moved = edit.moved
 LONGEST = edit.LONGEST
 
 
-def write_house(house: str, text: str, version: Optional[str] = None) -> dict:
+@_marks_first
+def write_house(house: str, text: str, version: Optional[str] = None, dry_run: bool = False) -> dict:
     try:
         path = os.path.join(WS.place(house), 'house.yaml')
     except ValueError as e:
@@ -256,15 +293,19 @@ def write_house(house: str, text: str, version: Optional[str] = None) -> dict:
     if not new:
         with open(path) as fh:
             _same(fh.read(), version)
-    before, after, was = _rewrite(path, text if text.endswith('\n') else text + '\n')
-    return dict({'house': house, 'did': 'made' if new else 'replaced',
+    before, after, was = _rewrite(path, text if text.endswith('\n') else text + '\n', bool(dry_run))
+    return dict({'house': house, 'did': ('would be ' if dry_run else '') + ('made' if new else 'replaced'),
                  'sheets': [p.id for p in after.plans()]}, **_moved(before, after, was))
 
 
+@_marks_first
 def edit_house(house: str, old: Optional[str] = None, new: Optional[str] = None, version: Optional[str] = None,
-               edits: Optional[list] = None) -> dict:
+               edits: Optional[list] = None, dry_run: bool = False, draft: bool = False) -> dict:
     path = house_file(_house(house))
-    with open(path) as fh:
+    source = edit.draft(path) if draft else path         # the draft: a whole text that did not solve, put right in place
+    if draft and not os.path.exists(source):
+        raise ToolError('%s has no draft: one is kept only when a whole text written to it does not solve' % house)
+    with open(source) as fh:
         text = fh.read()
     if edits is None:
         if old is None or new is None:
@@ -288,8 +329,12 @@ def edit_house(house: str, old: Optional[str] = None, new: Optional[str] = None,
         made = made.replace(was_, now)
         if len(made) > LONGEST:
             raise ToolError('that is too long to be a house file')
-    before, after, was = _rewrite(path, made)
-    return dict({'house': house, 'did': 'edited'}, **_moved(before, after, was))
+    if draft and not dry_run:
+        with open(source, 'w') as fh:                   # the draft keeps each change, whether or not it yet solves
+            fh.write(made)
+    before, after, was = _rewrite(path, made, bool(dry_run))
+    return dict({'house': house, 'did': ('would be ' if dry_run else '') + ('edited' if not draft else 'made from its draft')},
+                **_moved(before, after, was))
 
 
 BLOCK = r'^(\s*)(?:- )?(%s):\s*(#.*)?$'              # a key with its value on the lines under it
@@ -346,6 +391,7 @@ def _reach(data, parts):
     return data
 
 
+@_marks_first
 def add_to_house(house: str, to: str, entry: str, version: Optional[str] = None) -> dict:
     path = house_file(_house(house))
     with open(path) as fh:
@@ -406,6 +452,7 @@ def add_to_house(house: str, to: str, entry: str, version: Optional[str] = None)
     return dict({'house': house, 'did': 'added', 'to': to}, **_moved(before, after, was))
 
 
+@_marks_first
 def set_measurement(house: str, name: str, value: float) -> dict:
     path = house_file(_house(house))
     h = solve(path).house
@@ -522,10 +569,13 @@ TOOLS = [
      'and unless examples is false two example houses to copy from. Nothing already there is touched. Use '
      'it when list_houses comes back empty.'),
     (check, 'check', 'Everything the checks find wrong with a house, errors first: openings off their '
-     'wall, rooms that are one space (a wall is missing), labels with nowhere to go. `house` is a folder '
-     'name in houses/, as list_houses gives it.'),
+     'wall, rooms that are one space (a wall is missing), rooms no door reaches, doors that hit a fitting or '
+     'each other, what `connections` expects and is not drawn. `house` is a folder name in houses/, as '
+     'list_houses gives it. Ends with a look id, which resolving a mark takes.'),
     (sheet_report, 'report', "A house as figures: each sheet's areas, every room as measured, every "
-     'opening with its wall, centre and width, every fitting and rooflight, its notes by kind, and issues. Name a sheet for one. With '
+     'opening with its wall, centre and width, every fitting and rooflight, its notes by kind, and issues; '
+     '`connections` is every door and opening as the two rooms it joins (or `outside`) and the room its leaf '
+     'swings into, and every window as its room and the side it looks out of. Name a sheet for one. With '
      '`brief`, areas, rooms and issues only: what to read after a change. `total` adds up the levels as '
      'they stand. `internal` is everything inside the outside walls — partitions, stairs and stairwells '
      'with it, whatever the headroom — so it is not always the figure an agent quotes.'),
@@ -547,20 +597,27 @@ TOOLS = [
     (crop, 'crop', 'A close picture of part of one sheet, in metres. Use a metre or two: faults a whole '
      "sheet hides show up. With marks, two panels: the drawing, and the same with the owner's ink. Leave "
      'the box out for the whole sheet: its shape and arrangement, to set beside the drawing it was taken '
-     'from. With `mark_ids`, those marks — open or resolved, whichever sheet they were drawn on — are set on '
+     'from. Answers with a look id, which resolving a mark takes. With `underlay`, the source drawing the sheet names in `underlay:` is set faint over it, so where '
+     'the two differ shows. With `mark_ids`, those marks — open or resolved, whichever sheet they were drawn on — are set on '
      'this sheet as it is now, framed round them if no box is given: one picture of what was built beside what '
      'was drawn, to show the owner after a change made from their marks.'),
     (marks, 'marks', "What the owner drew on a house's page, laid out for reading: for each cluster of "
      'ink a picture of two panels (the drawing; the same with the ink in magenta, numbered in blue), and '
-     'the strokes in the order drawn, each with its id. It does not interpret: read the ink as signs '
+     'the strokes and comments in the order drawn, each with its id. A comment is a numbered pin or a box; '
+     'its words are listed beside the picture and below, with what it is on, the version it was made on '
+     '(made on an older one, the picture sets that drawing beside the drawing now) and the replies. It does not interpret: read the ink as signs '
      'first, then ask `at`. Only the marks still open, unless `include_resolved`, which adds the ones '
      'dealt with, in grey, with how; `sheet` is the marks drawn on one sheet. Says if the house file has '
      'changed since the marks were made.'),
-    (resolve_marks, 'resolve_marks', 'Close the marks you have built in, in the same turn as the change: `ids` as '
-     '`marks` lists them, `note` one line saying how they were dealt with. They stay in the file and can be '
-     'shown on the page in grey, but are no longer sent by `marks`. `sheets` records the sheets a mark was '
-     'applied to where that is not only the one it was drawn on — the owner drew on one option and meant '
-     'two. All of the ids or none. `reopen` opens them again. Only the owner deletes a mark, on the page.'),
+    (resolve_marks, 'resolve_marks', 'Reply to marks, in the same turn as the change: `ids` as `marks` lists them, '
+     '`note` one line — the reply the owner reads under each — and `state`, what it says the mark now is. '
+     '`resolved` (the default): built in; it needs `checked`, the look id a `crop` or `check` answered with, '
+     'taken after the change — read the source again for the area the mark covers first. `blocked`: it needs '
+     'the engine changed, or information nobody has given. `question`: you are asking the owner something. '
+     'Blocked marks and questions stay where the owner sees them; a reply from the owner opens any of the '
+     'three again. `sheets` is per mark, {id: [sheets]}, for a mark meant for more than the sheet it was '
+     'drawn on (a list will do for a single mark). All of the ids or none. `reopen` opens them again. Only '
+     'the owner deletes a mark, on the page.'),
     (set_measurement, 'set_measurement', "Change one measured value in a house's `survey`, in metres. "
      'Everything stepped off it follows. Returns what moved in every sheet and any new problem. Refuses '
      'a name from `lines`, which is derived.'),
@@ -572,7 +629,10 @@ TOOLS = [
      'its folder name (letters, digits, - and _), `text` the whole of its house.yaml. Kept only if it '
      'solves; otherwise nothing changes and the fault is said. Returns what check finds, and for a house '
      'that was there what moved. Build a house up in steps — envelope, walls, rooms, openings, stairs — '
-     'not in one go. Read `guide` first.'),
+     'not in one go. Read `guide` first. `dry_run` solves it and says what it would do, saving nothing. A '
+     'text that does not solve says the line at fault, and is kept as the house\'s draft: put that line right '
+     'with edit_house and `draft: true` rather than sending the whole text again. While the owner has marks open on the house, says so as '
+     '`open_marks`: read them with `marks` and act on them before changing any sheet.'),
     (edit_house, 'edit_house', "Change one passage of a house's file: `old` is text that is in it exactly "
      'once, `new` what goes there instead. For anything structural — a wall, a door, a room, a sheet, a '
      'note. Kept only if the house still solves. Returns what moved in every sheet — stairs and notes '
@@ -584,7 +644,10 @@ TOOLS = [
      'makes it safe to try again. For a change that takes several passages — a new name in `survey`, the '
      'line stepped off it and the wall on that line; a part taken out and every sheet that used it — give '
      '`edits`, a list of {old, new}, in place of `old` and `new`: they are made in order, the house is '
-     'solved once at the end, and all of them are kept or none.'),
+     'solved once at the end, and all of them are kept or none. `dry_run` says what it would do and saves '
+     'nothing; `draft` edits the draft a whole text that did not solve left behind, and when it solves it '
+     'becomes the house file. A change that does not solve says the line at fault. While the owner has marks open on the house, '
+     'says so as `open_marks`: those come first.'),
     (add_to_house, 'add_to_house', 'Add one entry to the end of a list in a house\'s file, without quoting what is '
      'there: `to` is where — `sheets.ground.walls`, `sheets.first.rooms`, `parts.core.openings`, '
      '`sheets.ground.notes.decided`, or `survey` or `lines` for a new name — and `entry` is the entry as '

@@ -31,6 +31,10 @@ __VIEW__
     closeEditor(true); setView(active,pane[active].view);
   });
 
+  // the drawing each sheet was traced from, over it, while asked for
+  if($("source")) $("source").addEventListener("click",function(){
+    var on_=document.body.classList.toggle("under"); this.setAttribute("aria-pressed",on_?"true":"false"); });
+
   function el(tag,a){var e=document.createElementNS(NS,tag);for(var k in a)e.setAttribute(k,a[k]);return e;}
   function status(t,s){ statusEl.textContent=t; dotEl.className="dot"+(s?" "+s:""); }
   function sheetOf(m){ return m.sheet||KEYS[0]; }
@@ -38,6 +42,10 @@ __VIEW__
   // kept, out of the way, and shown in grey when asked for, on the sheet it
   // was drawn on and on every sheet it was applied to
   function isDone(m){ return m.status==="resolved"; }
+  // blocked (it needs the engine changed, or something only the owner knows)
+  // and question (Claude asked something) stay in sight until the owner replies
+  function waiting(m){ return m.status==="blocked"||m.status==="question"; }
+  var STATE={blocked:"Blocked",question:"Claude asks"};
   function applied(m){ return Array.isArray(m.applied)?m.applied.filter(function(a){return typeof a==="string";}):[]; }
   function on(k){ return marks.filter(function(m){return !isDone(m)&&sheetOf(m)===k;}); }
   function done(k){ return marks.filter(function(m){
@@ -48,17 +56,36 @@ __VIEW__
   function r2(v){ return Math.round(v*100)/100; }
   function fmt(n){ return (Math.round(n*100)/100).toFixed(2); }
 
+  // a comment is a numbered pin, or a box with its pin at a corner; what it
+  // says is in the list beside the sheet, where it neither hides the drawing
+  // nor runs off its edge. Every mark on a sheet has a number, in the order
+  // drawn, and keeps it: the brief Claude reads numbers them the same way.
+  var numbers={};
+  function isComment(m){ return m.type==="note"||m.type==="box"; }
+  function numberAll(){
+    numbers={}; var n={};
+    marks.slice().sort(function(a,b){ return (a.ts||0)-(b.ts||0); }).forEach(function(m){
+      var k=sheetOf(m); n[k]=(n[k]||0)+1; numbers[m.ts]=n[k]; });
+  }
+  function pin(g,x,y,num){
+    g.appendChild(el("circle",{cx:x*U,cy:y*U,r:17,"class":"mk-pin"}));
+    var t=el("text",{x:x*U,y:y*U+7,"class":"mk-pinno"}); t.textContent=String(num); g.appendChild(t);
+  }
   function node(m){
-    var g=el("g",{"class":isDone(m)?"done":"","data-ts":String(m.ts)});
+    var g=el("g",{"class":isDone(m)?"done":waiting(m)?"waiting":"","data-ts":String(m.ts)});
     if(m.type==="pen"){
       g.appendChild(el("polyline",{points:(m.pts||[]).map(function(p){return (p[0]*U)+","+(p[1]*U);}).join(" "),"class":"mk-pen"}));
     } else if(m.type==="note"){
-      g.appendChild(el("circle",{cx:m.x*U,cy:m.y*U,r:9,"class":"mk-dot"}));
-      var n=el("text",{x:m.x*U+20,y:m.y*U+10,"class":"mk-note"}); n.textContent=m.text||"?"; g.appendChild(n);
+      pin(g,m.x,m.y,numbers[m.ts]||"?");
+    } else if(m.type==="box"&&m.box){
+      var b=m.box, x0=Math.min(b[0],b[2]), y0=Math.min(b[1],b[3]);
+      g.appendChild(el("rect",{x:x0*U,y:y0*U,width:Math.abs(b[2]-b[0])*U,height:Math.abs(b[3]-b[1])*U,"class":"mk-box"}));
+      pin(g,x0,y0,numbers[m.ts]||"?");
     }
     return g;
   }
   function render(){
+    numberAll();
     KEYS.forEach(function(k){
       var g=pane[k].marks; while(g.firstChild)g.removeChild(g.firstChild);
       (showDone?done(k):[]).concat(on(k)).forEach(function(m){g.appendChild(node(m));});
@@ -94,13 +121,30 @@ __VIEW__
     }
     var ul=document.createElement("ul");
     open.concat(showDone?dealt:[]).forEach(function(m){
-      var li=document.createElement("li"); if(isDone(m)) li.className="done";
-      li.appendChild(words("span","what",m.type==="note"?"“"+(m.text||"?")+"”":"Stroke"));
-      li.appendChild(words("small","",clock(m.ts)+(sheetOf(m)!==k?" · drawn on "+(LABEL[sheetOf(m)]||sheetOf(m)):"")));
+      var li=document.createElement("li"); if(isDone(m)) li.className="done"; else if(waiting(m)) li.className="waiting";
+      li.appendChild(words("span","num",String(numbers[m.ts]||"")));
+      li.appendChild(words("span","what",isComment(m)?(m.text||"?"):"Stroke"));
+      if(waiting(m)) li.appendChild(words("span","state",STATE[m.status]));
+      li.appendChild(words("small","",clock(m.ts)+(Array.isArray(m.room)&&m.room.length?" · on "+m.room.join(", "):"")
+        +(sheetOf(m)!==k?" · drawn on "+(LABEL[sheetOf(m)]||sheetOf(m)):"")));
+      var said=replies(m);
+      said.forEach(function(r){
+        li.appendChild(words("small","reply "+r.by,(r.by==="agent"?"Claude":"You")+" · "+clock(r.ts)+": "+r.text));
+      });
       if(isDone(m)){
         var to=applied(m).map(function(a){ return LABEL[a]||a; });
-        li.appendChild(words("small","how","Resolved"+(m.resolved?" "+clock(m.resolved):"")+(m.how?": "+m.how:"")
+        li.appendChild(words("small","how","Resolved"+(m.resolved?" "+clock(m.resolved):"")
+          +(m.how&&!said.some(function(r){return r.by==="agent"&&r.text===m.how;})?": "+m.how:"")
           +(to.length?" · applied to "+to.join(", "):"")));
+      }
+      if(local||db){
+        var form=document.createElement("form"); form.className="replyto";
+        var box=document.createElement("input"); box.type="text"; box.maxLength=300;
+        box.placeholder=isDone(m)||waiting(m)?"Reply — this opens it again":"Reply";
+        box.setAttribute("aria-label","Reply to mark "+(numbers[m.ts]||""));
+        form.appendChild(box);
+        form.addEventListener("submit",function(ev){ ev.preventDefault(); answer(m,box.value); });
+        li.appendChild(form);
       }
       var row=words("span","acts","");
       if(asking===m.ts){
@@ -124,6 +168,18 @@ __VIEW__
     box.appendChild(ul);
     // the keyboard stays where it was: on Keep, never on Delete, once the question is put
     if(was==="ask"||was==="show"){ var b=box.querySelector('[data-do="'+(was==="ask"?"no":"show")+'"]'); if(b) b.focus(); }
+  }
+  // a reply from the owner: kept under the mark, and if the mark was resolved
+  // it opens again, which is how the owner says it was not done
+  function replies(m){ return (Array.isArray(m.replies)?m.replies:[]).filter(function(r){
+    return r&&(r.by==="agent"||r.by==="owner")&&typeof r.text==="string"; }); }
+  function answer(m,text){
+    text=(text||"").trim().slice(0,300); if(!text) return;
+    var c={}; for(var key in m) if(key!=="_id") c[key]=m[key];
+    c.replies=replies(m).concat([{by:"owner",text:text,ts:Math.max(Date.now(),(m.resolved||0)+1)}]);
+    var was=isDone(m)||waiting(m);
+    if(was){ delete c.status; delete c.resolved; delete c.how; delete c.applied; }
+    act([c],[m],was?"Replied: mark "+(numbers[m.ts]||"")+" is open again.":"Replied.");
   }
   // what each control can do just now: nothing is offered that would do nothing
   function refresh(){
@@ -184,6 +240,7 @@ __VIEW__
   var lastTs=0;
   function add(m){
     m.ts=lastTs=Math.max(Date.now(),lastTs+1); m.id="m"+m.ts.toString(36); m.sheet=active;
+    if(isComment(m)&&VERSION) m.version=VERSION;           // the house file it was made on
     act([m],[],"");
   }
   // a change made on one sheet is undone where it can be seen
@@ -212,10 +269,10 @@ __VIEW__
   // ---- text is typed where it goes: click the plan, type, Enter. The click
   // leaves the note's dot there at once, and the field opens beside it, as
   // the words will stand beside the dot.
-  function openEditor(k,p,ev){
+  function openEditor(k,p,ev,box){
     closeEditor(true);
     var r=stagesEl.getBoundingClientRect(), W=220, H=34, inp=document.createElement("input");
-    inp.type="text"; inp.maxLength=120; inp.className="note-edit";
+    inp.type="text"; inp.maxLength=300; inp.className="note-edit";
     inp.placeholder="Type, then Enter"; inp.setAttribute("aria-label","Text to put on the plan here");
     var x=ev.clientX-r.left, G=14;
     if(x+G+W>r.width-4) x-=G+W; else x+=G;       // on the other side of the dot where there is no room
@@ -226,7 +283,10 @@ __VIEW__
       else if(e.key==="Escape"){ e.preventDefault(); closeEditor(false); }
     });
     inp.addEventListener("blur",function(){ closeEditor(true); });
-    editor={el:inp,x:p.x,y:p.y,at:pane[k].ghost,dot:el("circle",{cx:p.x*U,cy:p.y*U,r:9,"class":"mk-dot"})};
+    editor={el:inp,x:p.x,y:p.y,box:box||null,at:pane[k].ghost,dot:el("g",{})};
+    if(box) editor.dot.appendChild(el("rect",{x:Math.min(box[0],box[2])*U,y:Math.min(box[1],box[3])*U,
+      width:Math.abs(box[2]-box[0])*U,height:Math.abs(box[3]-box[1])*U,"class":"mk-box"}));
+    pin(editor.dot,box?Math.min(box[0],box[2]):p.x,box?Math.min(box[1],box[3]):p.y,(on(k).length+done(k).length)+1);
     editor.at.appendChild(editor.dot);
     stagesEl.appendChild(inp); inp.focus();
   }
@@ -236,7 +296,8 @@ __VIEW__
     var txt=ed.el.value.trim();
     clearGhost();
     if(ed.el.parentNode) ed.el.parentNode.removeChild(ed.el);
-    if(keep&&txt) add({type:"note",x:r2(ed.x),y:r2(ed.y),text:txt.slice(0,120)});
+    if(keep&&txt&&ed.box) add({type:"box",box:ed.box.map(r2),text:txt.slice(0,300)});
+    else if(keep&&txt) add({type:"note",x:r2(ed.x),y:r2(ed.y),text:txt.slice(0,300)});
   }
 
   KEYS.forEach(function(k){
@@ -244,7 +305,7 @@ __VIEW__
     svg.addEventListener("pointerdown",function(ev){
       var p=toSvg(k,ev); if(!p) return;
       menu(false);
-      if(tool==="note"){ press={x:ev.clientX,y:ev.clientY}; return; }   // placed on the way up, once the last text has landed
+      if(tool==="note"){ press={x:ev.clientX,y:ev.clientY,p:p}; try{ svg.setPointerCapture(ev.pointerId); }catch(e){} return; }   // placed on the way up, once the last text has landed
       try{ svg.setPointerCapture(ev.pointerId); }catch(e){}
       if(tool==="pan"){
         pan={px:ev.clientX,py:ev.clientY,cx:pane[k].view.cx,cy:pane[k].view.cy};
@@ -260,6 +321,12 @@ __VIEW__
         setView(k,{cx:pan.cx-(ev.clientX-pan.px)*s,cy:pan.cy-(ev.clientY-pan.py)*s,z:v.z});
         return;
       }
+      if(press&&tool==="note"&&(Math.abs(ev.clientX-press.x)>=6||Math.abs(ev.clientY-press.y)>=6)){
+        clearGhost();                     // a drag with the comment tool is a box
+        pane[k].ghost.appendChild(el("rect",{x:Math.min(press.p.x,p.x)*U,y:Math.min(press.p.y,p.y)*U,
+          width:Math.abs(p.x-press.p.x)*U,height:Math.abs(p.y-press.p.y)*U,"class":"mk-box"}));
+        return;
+      }
       if(!drag) return;
       clearGhost();
       var last=drag.pts[drag.pts.length-1];
@@ -269,9 +336,9 @@ __VIEW__
     svg.addEventListener("pointerup",function(ev){
       if(pan){ pan=null; svg.style.cursor=CURSOR[tool]||""; return; }
       if(press){
-        var still=Math.abs(ev.clientX-press.x)<6&&Math.abs(ev.clientY-press.y)<6, p=toSvg(k,ev);
-        press=null;
-        if(still&&p&&tool==="note") openEditor(k,p,ev);
+        var still=Math.abs(ev.clientX-press.x)<6&&Math.abs(ev.clientY-press.y)<6, p=toSvg(k,ev), from=press.p;
+        press=null; clearGhost();
+        if(p&&tool==="note") openEditor(k,p,ev,still?null:[from.x,from.y,p.x,p.y]);
         return;
       }
       if(!drag) return;

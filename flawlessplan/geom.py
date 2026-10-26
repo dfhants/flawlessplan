@@ -15,12 +15,14 @@ from shapely.affinity import rotate
 from shapely.geometry import Polygon, Point, LineString, box
 from shapely.ops import unary_union
 from shapely.prepared import prep
-from .fittings import KINDS
+from .fittings import KINDS, ROUND, HEARTH
 
 TOL = 0.002              # 2 mm: near enough to be the same point
 NEAR = 0.05              # a room within 50 mm of the size it was given has that size
 AREA_NEAR = 0.5          # m²
 OPEN = 60.0              # leaves are drawn 60 degrees open
+PROBE = 0.08             # how far past a wall's face a room is looked for, either side of an opening
+SWING_TOL = 0.002        # m² of a fitting a door may sweep before it is said to hit it
 COMPASS = {'n': (0.0, -1.0), 's': (0.0, 1.0), 'e': (1.0, 0.0), 'w': (-1.0, 0.0)}
 
 
@@ -201,9 +203,23 @@ class Plan(object):
         self._envelope()
         self._walls()
         self._openings()
+        said = len(self.issues)
         self._faces()
         self._fittings()
+        breasts = [f['breast'] for f in self.fittings if f.get('breast') is not None]
+        if breasts:                                 # a chimney breast is masonry: the rooms are found again without it
+            del self.issues[said:]
+            self.solids = self.solids + breasts
+            self._faces()
+            self._fittings()
+        self._swings()
+        self._links()
+        self._reach()
         self._rooflights()
+        for e in spec.get('sources', []):          # drawn as the source drew it, and known not to be so
+            if e['source'] == 'as-drawn-wrong':
+                self.warn('%s%s is drawn as the source has it, which is known to be wrong'
+                          % (e['where'], ' (%s)' % e['id'] if e['id'] else ''), 'info')
         for r in spec['require']:
             try:
                 ok = house['scope'].truth(r['that'])
@@ -421,6 +437,8 @@ class Plan(object):
                      hole=h.hole(s0, s1), frame=h.frame(s0, s1))
             if o['style'] == 'swing':
                 r['leaves'] = self._leaves(h, r, s0, s1)
+            elif o['style'] in ('up', 'roller'):         # a garage door: which way its panel goes up, or its roll is
+                r['inside'] = self._side(r['frame'], o['swing'], 'in' if h.inward is not None else 'left')
             self.openings.append(r)
 
     def _leaves(self, h, o, s0, s1):
@@ -453,6 +471,8 @@ class Plan(object):
         self.fittings = []
         for f in self.spec['fittings']:
             w, d = [given or usual for given, usual in zip((f['width'], f['depth']), KINDS[f['kind']])]
+            if f['kind'] in ROUND and f['width'] and not f['depth']:
+                d = w                               # its size is its diameter
             kind, val = f['at']
             end = COMPASS[f['corner'][0]] if f['corner'] else None
             h = None
@@ -485,12 +505,141 @@ class Plan(object):
                     o = _add(o, u, -w/2.0 if along > 0 else w/2.0)
             a, b = _add(o, u, -w/2.0), _add(o, u, w/2.0)
             floor = Polygon([a, b, _add(b, n, d), _add(a, n, d)])
+            extra = {}
+            if f['kind'] == 'fireplace':            # the breast, less its opening; the hearth on the floor in front
+                hw, hd = (w, HEARTH) if f['hearth'] == 'usual' else (f['hearth'] or (0.0, 0.0))
+                at = lambda s_, t_: _add(_add(o, u, s_), n, t_)
+                breast = floor
+                if f['opening']:
+                    ow, od = min(f['opening'][0], w - 0.1), min(f['opening'][1], d - 0.05)
+                    breast = floor.difference(Polygon([at(-ow/2.0, d - od), at(ow/2.0, d - od), at(ow/2.0, d + 0.01), at(-ow/2.0, d + 0.01)]))
+                extra = {'breast': breast, 'hearth': (hw, hd), 'opening': f['opening'] and (ow, od)}
+                if hw and hd:
+                    floor = floor.union(Polygon([at(-hw/2.0, d), at(hw/2.0, d), at(hw/2.0, d + hd), at(-hw/2.0, d + hd)]))
             if not self.I.buffer(0.02).contains(floor):
-                self.warn('%s: the %s is not all inside the building' % (f['where'], f['kind']))
-            elif floor.intersection(self.solid).area > 0.02:
-                self.warn('%s: the %s runs into a wall' % (f['where'], f['kind']))
-            self.fittings.append(dict(f, o=o, u=(-u[0], -u[1]) if f['flip'] else u, n=n, w=w, d=d,
-                                      floor=floor, host=h))
+                out = max(Point(p).distance(self.I) for p in floor.exterior.coords)
+                self.warn('%s: the %s is not all inside the building — it stands %.2f m out of it' % (f['where'], f['kind'], out))
+            elif f['kind'] != 'fireplace' and floor.intersection(self.solid).area > 0.02:
+                hit = floor.intersection(self.solid)
+                pts = [p for g in _polys(hit) for p in g.exterior.coords]
+                along = [_dot(_sub(p, o), u) for p in pts]
+                out_ = [_dot(_sub(p, o), n) for p in pts]
+                by = min(max(along) - min(along), max(out_) - min(out_))     # as far as it would have to move to clear it
+                self.warn('%s: the %s runs into a wall by %.2f m (it is %.2f × %.2f m)' % (f['where'], f['kind'], by, w, d))
+            u = (-u[0], -u[1]) if f['flip'] else u
+            right = 1 if _dot(u, (n[1], -n[0])) > 0 else -1     # the right hand of someone facing it
+            drain = {None: (1,), 'none': (), 'left': (-right,), 'right': (right,), 'both': (-1, 1)}[f.get('drainer')]
+            self.fittings.append(dict(f, o=o, u=u, n=n, w=w, d=d, drain=drain, floor=floor, host=h, **extra))
+
+    def _swings(self):
+        """A door must open clear of what is built in and of every other
+        door: each leaf swung right open, against each fitting's floor and
+        each other leaf's sweep. Drawn at 60 degrees, it is checked to 90,
+        which is as far as anyone opens it."""
+        swept = [(o, leaf_shape(*leaf, steps=12, angle=90.0)[2]) for o in self.openings for leaf in o.get('leaves', [])]
+        for i, (o, sector) in enumerate(swept):
+            for f in self.fittings:
+                if sector.intersection(f['floor']).area > SWING_TOL:
+                    self.warn('%s: the door in wall %s swings into the %s at %s'
+                              % (o['where'], o['host'].id, f['kind'], f['where']))
+            for other, theirs in swept[i+1:]:
+                if other is not o and sector.intersection(theirs).area > SWING_TOL:
+                    self.warn('%s: the door in wall %s and the one in wall %s (%s) swing into each other'
+                              % (o['where'], o['host'].id, other['host'].id, other['where']))
+
+    # ---- what leads where
+    def room_at(self, p):
+        """The room a point is in; OUTSIDE past the building; in a space
+        no room is seeded in, one with no name; None in a wall."""
+        pt = Point(p)
+        for r in self.rooms:
+            if r['face'].contains(pt):
+                return r
+        if not self.E.contains(pt):
+            return OUTSIDE
+        for f in self.faces:
+            if f.contains(pt):
+                return self._unnamed.setdefault(id(f), {'name': None, 'id': None, 'face': f})
+        return None
+
+    def _links(self):
+        """What each opening joins: the room on either side of it, the one
+        its leaf swings into and the side it is hung from; for a window
+        its room and the way it looks. Nothing is written down: it is read
+        off the plan as drawn, which is what a survey is checked against."""
+        self.links, self._unnamed = [], {}
+        for o in self.openings:
+            h = o['host']
+            if getattr(h, 'open', False):
+                continue
+            u = o['frame'][0]
+            n = (-u[1], u[0])
+            reach = h.t/2.0 + PROBE
+            a, b = self.room_at(_add(o['centre'], n, reach)), self.room_at(_add(o['centre'], n, -reach))
+            link = {'opening': o, 'kind': o['kind'], 'style': o['style'], 'wall': h.name,
+                    'rooms': (a, b), 'into': None, 'hinge': None, 'side': None}
+            if o['kind'] == 'window' or o['style'] == 'frame':
+                if OUTSIDE in (a, b):
+                    room, out = (b, n) if a is OUTSIDE else (a, (-n[0], -n[1]))
+                    link.update(rooms=(room,), side=compass(out))
+            if o.get('leaves'):
+                hinge, _, side, _ = o['leaves'][0]
+                link['into'] = self.room_at(_add(o['centre'], side, reach))
+                link['hinge'] = 'pair' if o['pair'] else compass(_sub(hinge, o['centre']))
+            o['link'] = link
+            self.links.append(link)
+
+    def passages(self):
+        """The links a person walks through: every door and opening that
+        is not glazed or a fixed light."""
+        return [k for k in self.links if k['kind'] != 'window' and k['style'] != 'frame']
+
+    def _reach(self):
+        """Every room should be reached from the front door by doors, or
+        on an upper floor from the stair. A room nothing leads to is
+        reported; so is a cupboard, which needs a door like any room."""
+        graph = {}
+
+        def join(a, b):
+            if a is not None and b is not None and a is not b:
+                graph.setdefault(id(a), set()).add(id(b))
+                graph.setdefault(id(b), set()).add(id(a))
+        for k in self.passages():
+            join(*k['rooms'])
+        for d0, d1 in self.spec['dividers']:            # a divider parts an open space: no wall there
+            for i in range(1, 10):
+                p = _add(d0, _sub(d1, d0), i/10.0)
+                v = _unit(d0, d1)[0]
+                join(self.room_at(_add(p, (-v[1], v[0]), PROBE)), self.room_at(_add(p, (v[1], -v[0]), PROBE)))
+        start = set([id(OUTSIDE)]) if id(OUTSIDE) in graph else set()
+        for st in self.spec['stairs']:
+            if st.get('ref') is not None:               # it arrives here: the room at its head
+                (ax, ay), (bx, by) = st['path'][-2], st['path'][-1]
+                d, L = _unit((ax, ay), (bx, by))
+                r = self.room_at(_add((bx, by), d, PROBE))
+                if r is None or r is OUTSIDE:
+                    r = self.room_at(_add((bx, by), d, -PROBE))
+                if r not in (None, OUTSIDE):
+                    start.add(id(r))
+        for h in self.env_hosts:                        # a half-level's open edge is walked across
+            if h.open:
+                for i in range(1, 10):
+                    s_ = h.L*i/10.0
+                    r = self.room_at(_add(h.at(s_), h.frame(s_ - 0.01, s_ + 0.01)[1], h.t/2.0 + PROBE))
+                    if r not in (None, OUTSIDE):
+                        start.add(id(r))
+        if not start:
+            return
+        seen, todo = set(start), list(start)
+        while todo:
+            for nxt in graph.get(todo.pop(), ()):
+                if nxt not in seen:
+                    seen.add(nxt)
+                    todo.append(nxt)
+        whence = 'the front door' if id(OUTSIDE) in start else 'the stair'
+        for r in self.rooms:
+            if id(r) not in seen:
+                self.warn('%s: no door leads to %s from %s' % (r['where'], r['name'], whence))
 
     def _rooflights(self):
         """Each light in the ceiling, with the room it is over: the one
@@ -862,9 +1011,17 @@ def _fitted(face, inside, n=12):
     return tuple(round(v, 3) for v in r)
 
 
-def leaf_shape(hinge, shut, side, w, steps=6):
+OUTSIDE = {'name': 'outside', 'id': None}           # what is past the envelope, as a room
+
+
+def compass(v):
+    """The nearest of n, e, s and w to a direction on the page."""
+    return max(COMPASS, key=lambda k: _dot(COMPASS[k], v))
+
+
+def leaf_shape(hinge, shut, side, w, steps=6, angle=OPEN):
     """The open leaf's tip, the arc's sweep flag, and the swept sector."""
-    a = math.radians(OPEN)
+    a = math.radians(angle)
     tip = (hinge[0] + w*(math.cos(a)*shut[0] + math.sin(a)*side[0]),
            hinge[1] + w*(math.cos(a)*shut[1] + math.sin(a)*side[1]))
     sweep = 1 if _cross(shut, side) > 0 else 0

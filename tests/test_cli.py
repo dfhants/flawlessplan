@@ -4,6 +4,7 @@ what it prints, what it exits with — and a workspace, which is where every
 command looks for houses and puts drawings."""
 import json
 import os
+import re
 import pytest
 
 from conftest import ROOM, ROOT
@@ -320,14 +321,14 @@ def test_marks_on_a_broken_house_are_not_a_traceback_either(ws, capsys):
 
 def test_crop_renders_a_box_or_the_whole_sheet(ws, tmp_path, capsys):
     assert run(ws, 'crop', 'cottage', 'ground', '2.8', '4', '6', '7.5') == 0
-    png = capsys.readouterr().out.strip()
+    png, seen = capsys.readouterr().out.strip().split('\n')
     assert png == os.path.join(ws.build, 'cottage', 'crop-ground.png') and open(png, 'rb').read(4) == b'\x89PNG'
+    assert re.match(r'^look look-[0-9a-f]{8}$', seen)                       # what resolving a mark is checked against
     svg = open(png[:-4] + '.svg').read()
     assert 'viewBox="280 400 320 350"' in svg and 'width="960" height="1050"' in svg       # 3 px to the cm
     out = str(tmp_path / 'whole.svg')
     assert run(ws, 'crop', 'cottage', 'ground', '--out', out) == 0
-    assert capsys.readouterr().out.strip() == out[:-4] + '.png'
-    import re
+    assert capsys.readouterr().out.strip().split('\n')[0] == out[:-4] + '.png'
     w, h = [float(v) for v in re.search(r'width="([\d.]+)" height="([\d.]+)"', open(out).read()).groups()]
     assert max(w, h) == pytest.approx(cli.WHOLE, abs=1)                                     # small enough to take in at once
 
@@ -393,14 +394,18 @@ def test_marks_lays_out_what_was_drawn_with_pictures(ws, capsys):
     pngs = [f for f in os.listdir(out) if f.endswith('.png')]
     assert len(pngs) >= 2 and all(os.path.getsize(os.path.join(out, f)) > 5000 for f in pngs)
     assert run(ws, 'crop', 'cottage', 'ground', '1', '1', '4', '4', '--marks') == 0
-    svg = open(capsys.readouterr().out.strip()[:-4] + '.svg').read()
+    svg = open(capsys.readouterr().out.strip().split('\n')[0][:-4] + '.svg').read()
     assert '#D0199B' in svg and svg.count('<polyline') == 1                 # the ink, on one of the two panels
 
 
 def test_marks_are_closed_from_the_command_line_and_then_left_out(ws, capsys):
     json.dump([{'type': 'pen', 'sheet': 'ground', 'ts': 1759800000000, 'pts': [[2, 2], [2.5, 2.5], [3, 2]]}], open(ws.marks('cottage'), 'w'))
     assert run(ws, 'resolve', 'cottage', 'nope', '--note', 'done') == 1 and "no mark called 'nope'" in capsys.readouterr().err
-    assert run(ws, 'resolve', 'cottage', 'mmgfvhedc', '--note', 'done', '--sheets', 'ground', 'first') == 0
+    assert run(ws, 'resolve', 'cottage', 'mmgfvhedc', '--note', 'done', '--sheets', 'ground', 'first') == 1
+    assert 'a mark is resolved on a look' in capsys.readouterr().err                # nobody looked at what was built
+    assert run(ws, 'check', 'cottage') == 0
+    seen = re.search(r'cottage: look (look-[0-9a-f]{8})', capsys.readouterr().out).group(1)
+    assert run(ws, 'resolve', 'cottage', 'mmgfvhedc', '--note', 'done', '--sheets', 'ground', 'first', '--checked', seen) == 0
     assert capsys.readouterr().out.strip() == 'mmgfvhedc: resolved, applied to ground, first'
     assert run(ws, 'marks', 'cottage') == 0
     assert capsys.readouterr().out.strip() == 'cottage: nothing still open — 1 resolved (ask for resolved marks to see them)'
@@ -408,9 +413,9 @@ def test_marks_are_closed_from_the_command_line_and_then_left_out(ws, capsys):
     assert run(ws, 'marks', 'cottage', '--all', '--sheet', 'first') == 0
     assert capsys.readouterr().out.strip() == 'cottage, sheet first: nothing drawn yet'
     assert run(ws, 'crop', 'cottage', 'ground', '1', '1', '4', '4', '--marks') == 0
-    assert '<polyline' not in open(capsys.readouterr().out.strip()[:-4] + '.svg').read()         # ink dealt with is not on a crop
+    assert '<polyline' not in open(capsys.readouterr().out.strip().split('\n')[0][:-4] + '.svg').read()         # ink dealt with is not on a crop
     assert run(ws, 'crop', 'cottage', 'first', '--ids', 'mmgfvhedc') == 0
-    built = open(capsys.readouterr().out.strip()[:-4] + '.svg').read()
+    built = open(capsys.readouterr().out.strip().split('\n')[0][:-4] + '.svg').read()
     assert built.count('<polyline') == 1 and 'WHAT WAS BUILT' in built      # asked for by name: there, on the sheet it was applied to
     assert run(ws, 'resolve', 'cottage', 'mmgfvhedc', '--reopen') == 0 and 'opened again' in capsys.readouterr().out
 

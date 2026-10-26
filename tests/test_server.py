@@ -106,21 +106,28 @@ def test_only_what_was_built_is_served(served):
 
 # ---- what is saved
 
+SERVED = ('version', 'room', 'context')     # what the server writes on a comment it has not seen
+
+
+def as_sent(marks):
+    """Marks as a page sent them, without what the server wrote on them."""
+    return [dict((k, v) for k, v in m.items() if k not in SERVED) if isinstance(m, dict) else m for m in marks]
+
 def test_marks_are_saved_in_the_houses_folder_and_come_back(served):
     ws, port = served
     assert ask(port, 'GET', '/cottage/marks.json') [:2] == (200, b'[]')        # nothing drawn yet
     status, body, head = ask(port, 'PUT', '/cottage/marks.json', NOTE)
     assert (status, body) == (204, b'')
     dest = os.path.join(ws.houses, 'cottage', 'marks.json')
-    assert json.load(open(dest)) == NOTE                                       # beside the house, where a rebuild leaves it
+    assert as_sent(json.load(open(dest))) == NOTE                                       # beside the house, where a rebuild leaves it
     assert not os.path.exists(os.path.join(ws.build, 'cottage', 'marks.json'))
     status, body, head = ask(port, 'GET', '/cottage/marks.json')
-    assert status == 200 and json.loads(body) == NOTE
+    assert status == 200 and as_sent(json.loads(body)) == NOTE
     assert head['content-type'] == 'application/json' and head['cache-control'] == 'no-store'
     assert ask(port, 'GET', '/cottage/marks.json?v=123')[1] == body            # a query does not hide it
     cli.build_all(ws)
-    assert json.load(open(dest)) == NOTE
-    assert ask(port, 'PUT', '/cottage/marks.json', [])[0] == 204 and json.load(open(dest)) == []
+    assert as_sent(json.load(open(dest))) == NOTE
+    assert ask(port, 'PUT', '/cottage/marks.json', [])[0] == 204 and as_sent(json.load(open(dest))) == []
 
 
 def test_a_mark_resolved_while_a_page_was_open_stays_resolved_and_the_page_is_told(served):
@@ -139,7 +146,7 @@ def test_a_mark_resolved_while_a_page_was_open_stays_resolved_and_the_page_is_to
     assert ask(port, 'PUT', '/cottage/marks.json', drawn + [dict(NOTE[0], ts=7)])[0] == 204
     got = json.loads(ask(port, 'GET', '/cottage/marks.json')[1])
     assert got[0]['status'] == 'resolved' and got[0]['how'] == 'made smaller' and got[0]['applied'] == ['ground']
-    assert got[1:] == [drawn[1], dict(NOTE[0], ts=7)] and stamp() == after
+    assert as_sent(got[1:]) == [drawn[1], dict(NOTE[0], ts=7)] and stamp() == after
     assert ask(port, 'PUT', '/cottage/marks.json', drawn[1:])[0] == 204        # the owner deletes it: gone for good
     assert json.loads(ask(port, 'GET', '/cottage/marks.json')[1]) == drawn[1:] and stamp() == before
     open(ws.marks('cottage'), 'w').write('{not json')
@@ -238,8 +245,8 @@ def test_what_is_written_is_what_was_sent_whatever_is_in_it(served):
             'text': '</script><script>alert(1)</script> “quoted” — ñ 日本語 \u2028 \x00'},
            {'type': 'pen', 'sheet': '../../x', 'pts': [[0, 0], [1e308, -1e308]], 'ts': 'soon'}, 7, None, 'words', {}]
     assert ask(port, 'PUT', '/cottage/marks.json', odd)[0] == 204
-    assert json.loads(ask(port, 'GET', '/cottage/marks.json')[1]) == odd
-    assert json.load(open(ws.marks('cottage'), encoding='utf-8')) == odd
+    assert as_sent(json.loads(ask(port, 'GET', '/cottage/marks.json')[1])) == odd
+    assert as_sent(json.load(open(ws.marks('cottage'), encoding='utf-8'))) == odd
 
 
 def test_many_saves_at_once_leave_one_whole_file(served):
@@ -250,8 +257,8 @@ def test_many_saves_at_once_leave_one_whole_file(served):
     [t.start() for t in threads]
     [t.join(20) for t in threads]
     assert got == [204] * 24
-    assert json.load(open(ws.marks('cottage'))) in sent                        # one of them, whole
-    assert sorted(os.listdir(os.path.join(ws.houses, 'cottage'))) == ['expected.json', 'house.yaml', 'marks.json']
+    assert as_sent(json.load(open(ws.marks('cottage')))) in sent                        # one of them, whole
+    assert sorted(os.listdir(os.path.join(ws.houses, 'cottage'))) == ['.versions', 'expected.json', 'house.yaml', 'marks.json']
 
 
 # ---- what is refused
@@ -305,7 +312,7 @@ def test_a_save_that_fails_leaves_what_was_there(served):
     ask(port, 'PUT', '/cottage/marks.json', NOTE)
     for body in (b'not json', b'{}', b''):
         assert ask(port, 'PUT', '/cottage/marks.json', body)[0] == 400
-    assert json.load(open(ws.marks('cottage'))) == NOTE
+    assert as_sent(json.load(open(ws.marks('cottage')))) == NOTE
     assert not [f for f in everything_under(ws.root) if f.endswith('.tmp')]
 
 
@@ -324,7 +331,7 @@ def test_the_most_that_will_be_saved_is_saved(served):
     assert len(pad) == server.Handler.LIMIT and ask(port, 'PUT', '/cottage/marks.json', pad)[0] == 204
     assert ask(port, 'PUT', '/cottage/marks.json', NOTE)[0] == 204
     assert ask(port, 'PUT', '/cottage/marks.json', pad + b' ')[0] in (400, None)       # refused, or hung up on, unread
-    assert json.load(open(ws.marks('cottage'))) == NOTE
+    assert as_sent(json.load(open(ws.marks('cottage')))) == NOTE
 
 
 @pytest.mark.parametrize('path', [

@@ -483,7 +483,7 @@ parts:
       - {door: std, wall: cross, at: centre, swing: s}
       - {window: 1.2, at: [2.0, 0]}
     fittings:
-      - {basin: true, wall: cross, side: s, at: centre}
+      - {basin: true, wall: cross, side: s, at: {from_start: 0.1}}
     rooms:
       - {name: LEFT, at: [1, 1]}
       - {name: RIGHT, at: [7, 1]}

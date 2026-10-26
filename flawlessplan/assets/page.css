@@ -149,6 +149,16 @@ body.noinfo .infos{display:none}
 .marklist ul{list-style:none;padding:0}
 .marklist li{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 8px;padding:5px 0;border-bottom:1px solid var(--rule)}      /* a mark is a line: what, when, and what can be done to it */
 .marklist .what{font-weight:600;color:var(--mark);overflow-wrap:anywhere}
+.marklist .num{display:inline-block;min-width:20px;height:20px;line-height:20px;border-radius:10px;text-align:center;
+  font-size:11.5px;font-weight:700;color:#fff;background:var(--mark)}
+.marklist li.done .num{background:var(--ink-soft)}
+.marklist li.waiting .num{background:var(--blue)}
+.marklist .state{font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:.5px}
+.marklist small.reply{flex-basis:100%;order:1;color:var(--ink)}
+.marklist small.reply.agent{padding-left:10px;border-left:2px solid var(--blue)}
+.marklist .replyto{flex-basis:100%;order:2;margin:3px 0 0}
+.marklist .replyto input{width:100%;font:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--rule);border-radius:3px;
+  background:transparent;color:var(--ink)}
 .marklist li.done .what{color:var(--ink-soft)}
 .marklist small{font-size:11.5px;color:var(--ink-soft);overflow-wrap:anywhere}
 .marklist small.how{flex-basis:100%;order:1}
@@ -171,12 +181,23 @@ svg.draw{position:absolute;left:66px;top:10px;width:calc(100% - 76px);height:cal
   user-select:none;-webkit-user-select:none}
 __DRAWING__
 .draw .hit{fill:transparent}
+.draw .underlay{display:none}
+body.under .draw .underlay{display:inline}
+#source[aria-pressed="true"]{color:var(--ink);background:var(--floor)}
 .draw .mk-pen{fill:none;stroke:var(--mark);stroke-width:7;stroke-linecap:round;stroke-linejoin:round}
 .draw .mk-note{font-family:var(--sans);font-size:28px;font-weight:600;fill:var(--mark)}
 .draw .mk-dot{fill:var(--mark)}
+.draw .mk-pin{fill:var(--mark);stroke:#fff;stroke-width:4}
+.draw .mk-pinno{font-family:var(--sans);font-size:20px;font-weight:700;fill:#fff;text-anchor:middle;pointer-events:none}
+.draw .mk-box{fill:var(--mark);fill-opacity:.07;stroke:var(--mark);stroke-width:5;stroke-dasharray:16 10}
 /* a mark that has been dealt with, over the plan as it is now */
 .draw .done .mk-pen{stroke:var(--ink-soft);stroke-opacity:.55;stroke-dasharray:2 12}
-.draw .done .mk-note,.draw .done .mk-dot{fill:var(--ink-soft);fill-opacity:.7}
+.draw .done .mk-note,.draw .done .mk-dot,.draw .done .mk-pin{fill:var(--ink-soft);fill-opacity:.7}
+.draw .done .mk-box{stroke:var(--ink-soft);fill:none}
+.draw .hot .mk-pin{stroke-width:7}
+.draw .waiting .mk-pin{fill:var(--blue)}
+.draw .waiting .mk-box{stroke:var(--blue);fill:var(--blue)}
+.draw .waiting .mk-pen{stroke:var(--blue)}
 .draw .hot .mk-pen{stroke-width:13;stroke-opacity:1;stroke-dasharray:none}
 .draw .hot .mk-dot{r:15}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}

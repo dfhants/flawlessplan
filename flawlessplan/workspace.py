@@ -19,7 +19,7 @@ ENV = 'FLAWLESSPLAN_WORKSPACE'
 EXAMPLES = os.path.join(os.path.dirname(__file__), 'examples')
 NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]*\Z')     # \Z: `$` would let a name end in a newline
 
-GITIGNORE = 'build/\npublic/\n.vercel/\nhouses/*/marks.json\n.DS_Store\n'
+GITIGNORE = 'build/\npublic/\n.vercel/\nhouses/*/marks.json\nhouses/*/.versions/\nhouses/*/house.draft.yaml\n.DS_Store\n'
 MCP = '{\n  "mcpServers": {\n    "flawlessplan": {"command": "flawlessplan", "args": ["mcp"]}\n  }\n}\n'
 GUIDE = """# Houses drawn with flawlessplan
 
@@ -29,6 +29,8 @@ openings and rooms. Every room size is measured from the geometry.
 - **A dimension is written down once.** `survey` is what was measured and
   `lines` is every wall line stepped off it; everything else uses those
   names. Never write a number that can be derived.
+- **Marks first.** Before building or changing any sheet, run
+  `flawlessplan marks <name>` and act on what the owner has left open.
 - After any change run `flawlessplan check <name>` and read what it says;
   `flawlessplan build` draws every house into `build/`.
 - `flawlessplan build --serve` opens the pages, where plans can be drawn

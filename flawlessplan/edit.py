@@ -42,11 +42,79 @@ def same(text, given, new=None):
                          'an earlier call that seemed to fail was probably made' if there else ''))
 
 
-def rewrite(path, text, ws):
+DRAFT = 'house.draft.yaml'      # beside a house file: a whole text that did not solve, kept to be put right
+
+
+def draft(path):
+    return os.path.join(os.path.dirname(path), DRAFT)
+
+
+def _node(root, steps):
+    """The YAML node a path of keys and indexes leads to, or None."""
+    node = root
+    for k in steps:
+        if isinstance(node, yaml.MappingNode):
+            node = next((v for key, v in node.value if key.value == str(k)), None)
+        elif isinstance(node, yaml.SequenceNode) and isinstance(k, int):
+            node = node.value[k] if k < len(node.value) else None
+        elif isinstance(node, yaml.SequenceNode):          # a sheet in a list of them, by its id
+            node = next((v for v in node.value if isinstance(v, yaml.MappingNode)
+                         and any(key.value == 'id' and getattr(val, 'value', None) == str(k) for key, val in v.value)), None)
+        else:
+            return None
+        if node is None:
+            return None
+    return node
+
+
+def _items(root, holder, key, seen=()):
+    """The entries of one list of a sheet or a part as the house is read:
+    those of the parts it uses, in order, then its own."""
+    out = []
+    use = _node(holder, ['use'])
+    for p in (use.value if isinstance(use, yaml.SequenceNode) else []):
+        part = _node(root, ['parts', p.value])
+        if part is not None and p.value not in seen:
+            out += _items(root, part, key, seen + (p.value,))
+    own = _node(holder, [key])
+    return out + (own.value if isinstance(own, yaml.SequenceNode) else [])
+
+
+def line_of(text, said):
+    """The line of a house file that what was said of it is about: the
+    place it names at its start (`sheets.ground.rooms[2]: ...`), or the
+    line a YAML error gives. None where it names no place in the file."""
+    m = re.search(r'line (\d+), column', said)
+    if m:
+        return int(m.group(1))
+    said = re.sub(r'^(not changed — the house would not solve: )?(sheet [\w-]+: )?', '', said)
+    m = re.match(r'^([\w.\[\]-]+):', said)
+    if not m:
+        return None
+    try:
+        root = yaml.compose(text)
+    except yaml.YAMLError:
+        return None
+    steps = [int(t[1:-1]) if t.startswith('[') else t for t in re.findall(r'\[\d+\]|[^.\[\]]+', m.group(1))]
+    node = None
+    if len(steps) >= 4 and steps[0] in ('sheets', 'parts') and isinstance(steps[3], int):
+        holder = _node(root, steps[:2])                      # a sheet's lists are read with its parts first
+        listed = _items(root, holder, steps[2]) if holder is not None else []
+        node = listed[steps[3]] if steps[3] < len(listed) else None
+        node = _node(node, steps[4:]) if node is not None and steps[4:] else node
+    while node is None and steps:
+        node = _node(root, steps)
+        steps = steps[:-1]
+    return None if node is None else node.start_mark.line + 1
+
+
+def rewrite(path, text, ws, dry=False):
     """Replace a house file, or make it, and leave things as they were if
     it does not solve. Returns its state before (None for a house that
     is new, or did not solve), the house solved after, and the house as
-    it was solved before."""
+    it was solved before. `dry` solves it and writes nothing. A whole
+    text that does not solve is kept as the house's draft, so what is
+    wrong in it is put right in place, not sent again."""
     old = before = was = None
     if os.path.exists(path):
         with open(path) as fh:
@@ -56,6 +124,11 @@ def rewrite(path, text, ws):
             before = report.state(was)
         except (model.ConfigError, ValueError):
             pass
+    if dry:
+        try:
+            return before, solve_text(text, path), was
+        except Exception as e:
+            raise Refused(failed(text, e))
     made = not os.path.isdir(os.path.dirname(path))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, 'w') as fh:
@@ -70,9 +143,28 @@ def rewrite(path, text, ws):
         else:
             with open(path, 'w') as fh:
                 fh.write(old)
-        raise Refused('not changed — the house would not solve: %s' % (e if str(e) else type(e).__name__))
+        if old is not None:
+            with open(draft(path), 'w') as fh:
+                fh.write(text)
+        raise Refused(failed(text, e) + ('; the whole text is kept as the draft: put that right with edit_house and '
+                                         '`draft: true`, rather than sending it all again' if old is not None else ''))
+    if os.path.exists(draft(path)):
+        os.remove(draft(path))
     redraw(os.path.dirname(path), ws, new=old is None)
     return before, after, was
+
+
+def solve_text(text, path):
+    """A house file's text solved, as it would be at `path`, without writing it."""
+    from .solve import solved
+    return solved(model.loads(text, path), path)
+
+
+def failed(text, e):
+    """Why a text would not solve, and the line it is about."""
+    said = str(e) if str(e) else type(e).__name__
+    at = line_of(text, said)
+    return 'not changed — the house would not solve: %s%s' % (said, ' (line %d)' % at if at else '')
 
 
 def redraw(house, ws, new=False):

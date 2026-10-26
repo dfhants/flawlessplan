@@ -14,7 +14,7 @@ import math
 import yaml
 from .expr import Scope, ExprError, imperial
 from .geom import inner_ring, signed_area, arc
-from .fittings import KINDS
+from .fittings import KINDS, BOWLS, DRAINERS, OPENING
 
 DEFAULTS = {
     'ext_wall': 0.30,            # external wall thickness
@@ -68,6 +68,33 @@ TEXT_STYLES = ('name', 'small', 'mini', 'note', 'zone')
 DIM_STYLES = ('', 'soft', 'calc')
 COMPASS = ('north', 'east', 'south', 'west')
 NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]*\Z')     # \Z: `$` would let an id end in a newline
+# Every key the reader knows, by where it is written. Any other is said, not
+# passed over: a key the engine does not read was otherwise taken in silence.
+_CURVE = ('rise', 'radius', 'via', 'toward')
+KNOWN = {
+    'top': ('house', 'defaults', 'survey', 'lines', 'parts', 'levels', 'sheets', 'outline', 'connections'),
+    'house': ('name', 'front', 'front_note', 'private', 'north'),
+    'outline': ('sheets', 'notes'),
+    'sheet': ('id', 'title', 'tab', 'level', 'scheme', 'changes', 'extends', 'hidden', 'demolition', 'unlabelled',
+              'require', 'envelope', 'use', 'omit', 'notes', 'underlay', 'walls', 'dividers', 'openings', 'rooms',
+              'stairs', 'areas', 'solids', 'fittings', 'rooflights', 'labels', 'gone', 'dims', 'zones'),
+    'walls': ('id', 'from', 'to', 't', 'butt', 'path') + _CURVE,
+    'envelope': ('at', 't', 'id', 'open') + _CURVE,
+    'openings': ('door', 'window', 'opening', 'pair', 'at', 'wall', 'hinge', 'swing', 'face', 'style', 'id'),
+    'rooms': ('name', 'id', 'expect', 'at', 'sub', 'rot', 'size', 'dims', 'zone', 'label', 'dx', 'dy'),
+    'fittings': tuple(KINDS) + ('id', 'depth', 'wall', 'at', 'side', 'facing', 'corner', 'flip', 'label', 'bowls',
+                                'drainer', 'hearth', 'opening'),
+    'stairs': ('id', 'path', 'width', 'treads', 'going', 'riser', 'turns', 'cut_risers', 'show', 'label', 'ref'),
+    'areas': ('id', 'points', 'rect', 'style', 'label', 'sub', 'rot'),
+    'labels': ('at', 'text', 'rot', 'style'),
+    'dims': ('from', 'to', 'text', 'style'),
+    'zones': ('name', 'id', 'rooms', 'sub', 'label'),
+    'dividers': ('from', 'to'),
+}
+for _k in ('walls', 'envelope', 'openings', 'rooms', 'fittings', 'stairs', 'areas', 'labels', 'dims', 'zones', 'dividers'):
+    KNOWN[_k] += ('source',)        # where it came from, element by element
+SOURCES = ('traced', 'assumed', 'as-drawn-wrong')   # read off the source; a guess; drawn as the source has it, which is known wrong
+PICTURE = re.compile(r'^[\w][\w ./-]{0,200}\.(png|jpe?g)\Z', re.I)    # a picture beside the house file, by a plain name
 MOST_TREADS = 60             # to a leg: more than any stair has, and few enough to draw
 
 
@@ -100,6 +127,7 @@ class Loader(object):
                 raise ConfigError('defaults: unknown key %r' % k)
             self.defaults[k] = v
         self.status, self.written = {}, {}
+        self.unknown = []               # keys nothing reads: (where, key), said once each
         self.known = {}                 # the walls of the sheet being read that a point may be put on
         self.scope = self._scope()
 
@@ -128,6 +156,13 @@ class Loader(object):
             self._define(sc, k, v, 'lines')
             self.status[k] = 'derived'
         return sc
+
+    def stray(self, x, known, where):
+        """Note each key of a mapping that the reader does not know."""
+        if isinstance(x, dict):
+            for k in x:
+                if str(k) not in KNOWN[known] and (where, str(k)) not in self.unknown:
+                    self.unknown.append((where, str(k)))
 
     def _define(self, sc, k, v, table):
         if k in sc.names:
@@ -315,7 +350,8 @@ class Loader(object):
 
     # -- a sheet that is another sheet, and more: and what a sheet leaves out
     OWN = ('id', 'title', 'tab', 'scheme', 'notes', 'hidden', 'use', 'extends', 'omit')    # never taken from the sheet extended
-    OMITS = (('wall', 'walls'), ('opening', 'openings'), ('room', 'rooms'), ('stair', 'stairs'), ('rooflight', 'rooflights'))
+    OMITS = (('wall', 'walls'), ('opening', 'openings'), ('room', 'rooms'), ('stair', 'stairs'), ('rooflight', 'rooflights'),
+             ('fitting', 'fittings'), ('area', 'areas'))
 
     def extended(self, f, own, where):
         """`extends: <sheet>`: that sheet as it was read — its parts in,
@@ -344,7 +380,7 @@ class Loader(object):
         if not omit:
             return f
         if not isinstance(omit, list):
-            raise ConfigError('%s.omit: a list of ids — walls, openings, rooms, stairs' % where)
+            raise ConfigError('%s.omit: a list of ids — walls, openings, rooms, stairs, fittings, areas' % where)
         f = dict(f)
         # a wall with no id is called by its place in the list, which taking one out would change
         f['walls'] = [x if not isinstance(x, dict) or 'id' in x else dict(x, id='w%d' % i)
@@ -372,13 +408,18 @@ class Loader(object):
                                 isinstance(x, dict) and x.get('wall') is not None
                                 and (str(x['wall']) == name or str(x['wall']).startswith(name + '.')))]
             if not found:
-                raise ConfigError('%s: nothing called %r on this sheet — a wall, an opening, a room, a stair or a rooflight '
-                                  'by its `id`, or a room by its name' % (ww, name))
+                raise ConfigError('%s: nothing called %r on this sheet — a wall, an opening, a room, a stair, a rooflight, '
+                                  'a fitting or an area by its `id`, or a room by its name' % (ww, name))
         return f
 
     # -- the sheets
     def house(self):
         h = self.raw.get('house') or {}
+        self.stray(self.raw, 'top', 'the house file')
+        self.stray(h, 'house', 'house')
+        self.stray(self.raw.get('outline'), 'outline', 'outline')
+        for name, part in (self.raw.get('parts') or {}).items() if isinstance(self.raw.get('parts'), dict) else []:
+            self.stray(part, 'sheet', 'parts.%s' % name)
         if 'floors' in self.raw:
             raise ConfigError('%s: `floors:` is now `sheets:` — a sheet is one drawing of one '
                               'level, and says which with `level:`' % self.path)
@@ -395,13 +436,29 @@ class Loader(object):
             raise ConfigError('%s: `sheets:` is a list of sheets, each a mapping with an `id`' % self.path)
         # the storeys, bottom up; left out, every sheet that names no level is one
         levels = self.raw.get('levels') or [str(_need(f, 'id', 'sheet')) for f in sheets if 'level' not in f]
-        self.levels = [str(v) for v in levels]
+        if not isinstance(levels, list):
+            raise ConfigError('levels: a list of the storeys, bottom up')
+        self.levels, heights = [], {}
+        for i, v in enumerate(levels):
+            # a level may say how high it is, floor to the floor above, and how deep its own floor is
+            if isinstance(v, dict):
+                w = 'levels[%d]' % i
+                if set(v) - set(('id', 'height', 'floor_depth')):
+                    raise ConfigError('%s: a level is its id, or {id:, height:, floor_depth:}' % w)
+                heights[str(_need(v, 'id', w))] = dict(
+                    (k, None if v.get(k) is None else self.some(v[k], '%s.%s' % (w, k), 'a height'))
+                    for k in ('height', 'floor_depth'))
+                v = v['id']
+            self.levels.append(str(v))
         out = {'name': str(h.get('name') or stem(self.path)),
                'front': h.get('front'), 'front_note': None if h.get('front_note') is None else str(h['front_note']),
                'private': bool(h.get('private', False)),
+               'north': self.num(h.get('north', 0), 'house.north') % 360.0,
                'defaults': self.defaults, 'names': dict(self.scope.names),
                'status': dict(self.status), 'written': dict(self.written), 'scope': self.scope, 'sheets': [],
-               'levels': self.levels, 'outline': self.raw.get('outline') or {}}
+               'levels': self.levels, 'outline': self.raw.get('outline') or {},
+               'heights': dict((lv, heights.get(lv, {'height': None, 'floor_depth': None})) for lv in self.levels),
+               'connections': self.connections(self.raw.get('connections')), 'unknown': self.unknown}
         if not isinstance(out['outline'], dict):
             raise ConfigError('outline: a mapping — `sheets:` to say which, and `notes:`')
         seen, self.flat = {}, {}                    # the sheets read; each as written out whole, for one that extends it
@@ -424,11 +481,62 @@ class Loader(object):
             raise ConfigError('outline.sheets: list sheets by their id (have %s)' % ', '.join(seen))
         return out
 
+    def connections(self, v):
+        """What the drawing the house came from shows leading where, read
+        off it room by room: `[HALL, KITCHEN]` for a way through of any
+        kind; `{door: [HALL, KITCHEN], into: KITCHEN, hinge: w}` for a door,
+        the room it swings into and the side its hinge is on;
+        `{opening: [A, B]}` for one with no door; `{window: KITCHEN, side:
+        s}`. `outside` is past the building."""
+        if v is None:
+            return None
+        if not isinstance(v, list):
+            raise ConfigError('connections: a list — [A, B], {door: [A, B]}, {opening: [A, B]} or {window: A, side: s}')
+        out = []
+        for i, x in enumerate(v):
+            w = 'connections[%d]' % i
+            if isinstance(x, list):
+                x = {'way': x}
+            if not isinstance(x, dict):
+                raise ConfigError('%s: [A, B], {door: [A, B]}, {opening: [A, B]} or {window: A, side: s}' % w)
+            kinds = [k for k in ('way', 'door', 'opening', 'window') if k in x]
+            if len(kinds) != 1:
+                raise ConfigError('%s: give one of door, opening and window' % w)
+            kind = kinds[0]
+            allowed = {'way': (), 'door': ('into', 'hinge'), 'opening': (), 'window': ('side',)}[kind]
+            if set(x) - set((kind,) + allowed):
+                raise ConfigError('%s: a %s takes %s' % (w, 'way through' if kind == 'way' else kind,
+                                                         ', '.join(allowed) or 'nothing else'))
+            c = {'kind': kind, 'where': w, 'into': None, 'hinge': None, 'side': None}
+            if kind == 'window':
+                c['rooms'] = (str(x['window']),)
+                side = str(x.get('side', '')).lower()
+                if side[:1] not in ('n', 'e', 's', 'w') or side not in ('n', 'e', 's', 'w') + COMPASS:
+                    raise ConfigError('%s.side: the way the window looks — a compass point, not %r' % (w, x.get('side')))
+                c['side'] = side[:1]
+            else:
+                pair = x[kind]
+                if not isinstance(pair, list) or len(pair) != 2:
+                    raise ConfigError('%s: name the two rooms it joins, as [A, B]' % w)
+                c['rooms'] = tuple(str(r) for r in pair)
+                if x.get('into') is not None:
+                    c['into'] = str(x['into'])
+                    if c['into'] not in c['rooms']:
+                        raise ConfigError('%s.into: %s is not one of the rooms it joins' % (w, c['into']))
+                if x.get('hinge') is not None:
+                    hinge = str(x['hinge']).lower()
+                    if hinge != 'pair' and (hinge[:1] not in ('n', 'e', 's', 'w') or hinge not in ('n', 'e', 's', 'w') + COMPASS):
+                        raise ConfigError('%s.hinge: the side its hinge is on — a compass point, or pair' % w)
+                    c['hinge'] = hinge if hinge == 'pair' else hinge[:1]
+            out.append(c)
+        return out
+
     def sheet(self, f, earlier):
         fid = str(_need(f, 'id', 'sheet'))
         if not NAME.match(fid):                     # it becomes a file name and an element id
             raise ConfigError('sheets: id %r — use letters, digits, - and _ only' % fid)
         w = 'sheets.%s' % fid
+        self.stray(f, 'sheet', w)
         extends = None if f.get('extends') is None else str(f['extends'])
         f = self.omitted(dict(self.extended(f, self.merged(f, w), w), omit=f.get('omit')), w)
         level = str(f.get('level', fid))
@@ -443,6 +551,18 @@ class Loader(object):
                 raise ConfigError('%s.changes: %r is the %s level, this sheet the %s'
                                   % (w, changes, earlier[changes]['level'], level))
         name = fid.replace('-', ' ')
+        sources = []
+        for k in ('walls', 'openings', 'rooms', 'fittings', 'stairs', 'areas', 'labels', 'dims', 'zones', 'dividers'):
+            for i, x in enumerate(f.get(k) or [] if isinstance(f.get(k), list) else []):
+                self.stray(x, k, '%s.%s[%d]' % (w, k, i))
+                if isinstance(x, dict) and x.get('source') is not None:
+                    if x['source'] not in SOURCES:
+                        raise ConfigError('%s.%s[%d].source: one of %s, not %r' % (w, k, i, ', '.join(SOURCES), x['source']))
+                    sources.append({'where': '%s.%s[%d]' % (w, k, i), 'source': x['source'],
+                                    'id': None if x.get('id') is None else str(x['id'])})
+        e = f.get('envelope')
+        for i, x in enumerate((e.get('points') if isinstance(e, dict) else e) or []):
+            self.stray(x, 'envelope', '%s.envelope[%d]' % (w, i))
         env = self.envelope(_need(f, 'envelope', w), w + '.envelope')
         n = len(env['pts'])
         norms = inner_ring(env['pts'], env['t'])[1]
@@ -452,6 +572,7 @@ class Loader(object):
                                         for k in range(i, i + count)]
             if wall:
                 self.known[str(wall)] = self.known['env.%d' % j]
+        under = self.underlay(f.get('underlay'), w + '.underlay')
         fl = {'id': fid, 'title': f.get('title', name.upper() + (' FLOOR' if fid == level else '')),
               'tab': f.get('tab', name.title()),
               'level': level, 'scheme': f.get('scheme'), 'changes': changes, 'extends': extends,
@@ -459,7 +580,7 @@ class Loader(object):
               'demolition': bool(f.get('demolition', True)),
               'unlabelled': f.get('unlabelled') == 'ok', 'gone': [], 'dims': [],
               'require': list(f.get('require') or []),
-              'envelope': env,
+              'envelope': env, 'underlay': under, 'sources': sources,
               'walls': [], 'openings': [], 'rooms': [], 'stairs': [], 'areas': [],
               'solids': [], 'labels': [], 'dividers': [], 'zones': [], 'notes': [], 'fittings': [], 'rooflights': []}
         for i, x in enumerate(f.get('walls') or []):
@@ -483,12 +604,13 @@ class Loader(object):
                                 'label': self.label(x.get('label', True), ww), 'where': ww})
         for i, x in enumerate(f.get('stairs') or []):
             fl['stairs'].append(self.stair(x, '%s.stairs[%d]' % (w, i), earlier))
+            fl['stairs'][-1].setdefault('level', level)       # the storey it climbs from
         for i, x in enumerate(f.get('areas') or []):
             ww = '%s.areas[%d]' % (w, i)
             if x.get('style', 'below') not in AREA_STYLES:
                 raise ConfigError('%s.style: no area style %r (have %s)'
                                   % (ww, x['style'], ', '.join(AREA_STYLES)))
-            fl['areas'].append({'pts': self.shape(x, ww), 'style': x.get('style', 'below'),
+            fl['areas'].append({'pts': self.shape(x, ww), 'style': x.get('style', 'below'), 'id': x.get('id'),
                                 'label': x.get('label'), 'sub': x.get('sub'),
                                 'rot': self.turn(x.get('rot'), ww)})
         for i, x in enumerate(f.get('solids') or []):
@@ -518,6 +640,22 @@ class Loader(object):
         fl['notes'] = f.get('notes') or notes(None, w)          # filled in once rooms are measured
         self.flat[fid] = dict(f, level=level)
         return fl
+
+    def underlay(self, u, where):
+        """The drawing a sheet was traced from, to set under it when it is
+        compared: `{image: source.png, scale: 58.7, at: [x, y], rot: 0}` —
+        a picture in the house's folder, how many of its pixels make a
+        metre, where its top left corner falls on the plan, and how far it
+        is turned. It is never drawn on a sheet that is sent or hosted."""
+        if u is None:
+            return None
+        if not isinstance(u, dict) or set(u) - set(('image', 'scale', 'at', 'rot')):
+            raise ConfigError('%s: {image:, scale:, at: [x, y]}, and rot: if it is turned' % where)
+        image = str(_need(u, 'image', where))
+        if not PICTURE.match(image) or '..' in image.split('/'):
+            raise ConfigError('%s.image: a .png or .jpg in the house\'s folder, by its name there' % where)
+        return {'image': image, 'scale': self.some(_need(u, 'scale', where), where + '.scale', 'a scale'),
+                'at': self.pt(u.get('at', [0, 0]), where + '.at'), 'rot': self.turn(u.get('rot'), where) or 0.0}
 
     def envelope(self, e, where):
         """Outer faces, in order. A point may carry the thickness and the
@@ -590,7 +728,7 @@ class Loader(object):
             width, leaf = self.some(v, '%s.%s' % (where, kind), 'an opening'), None
         at = self.along(x, where)
         style = x.get('style', {'door': 'swing', 'window': 'window', 'opening': 'none'}[kind])
-        if style not in ('swing', 'window', 'none', 'fold', 'slide', 'frame'):
+        if style not in ('swing', 'window', 'none', 'fold', 'slide', 'frame', 'up', 'roller'):
             raise ConfigError('%s.style: unknown style %r' % (where, style))
         return {'kind': kind, 'width': width, 'leaf': leaf, 'pair': pair, 'at': at,
                 'wall': x.get('wall'), 'hinge': str(x.get('hinge', 'start')),
@@ -636,7 +774,31 @@ class Loader(object):
                     raise ConfigError('%s.%s: use a compass point, not %r' % (where, k, x[k]))
         if 'wall' not in x and 'facing' not in words:
             raise ConfigError('%s: name the `wall:` its back is against, or say which way it is `facing:`' % where)
-        return {'kind': kind, 'width': size[0], 'depth': size[1], 'at': self.along(x, where),
+        if kind != 'sink' and ('bowls' in x or 'drainer' in x):
+            raise ConfigError('%s: only a sink has `bowls:` and a `drainer:`' % where)
+        if kind != 'fireplace' and ('hearth' in x or 'opening' in x):
+            raise ConfigError('%s: only a fireplace has a `hearth:` and an `opening:`' % where)
+        hearth, opening = None, None
+        if kind == 'fireplace':
+            def pair(k, usual):
+                v = x.get(k, usual)
+                if v is False or v is None:
+                    return None
+                if not isinstance(v, (list, tuple)) or len(v) != 2:
+                    raise ConfigError('%s.%s: [wide, deep], or false for none' % (where, k))
+                return tuple(self.some(a, '%s.%s' % (where, k), 'a size') for a in v)
+            hearth = 'usual' if x.get('hearth', True) is True else pair('hearth', None)     # usual: as wide as the breast
+            opening = pair('opening', list(OPENING))
+        bowls = x.get('bowls', 1)
+        if isinstance(bowls, bool) or bowls not in BOWLS:
+            raise ConfigError('%s.bowls: use %s, not %r' % (where, ', '.join(str(b) for b in BOWLS), bowls))
+        drainer = x.get('drainer')                     # None: on the end its line runs to, as it always was
+        if drainer is not None:
+            drainer = 'none' if drainer is False else str(drainer).lower()
+            if drainer not in DRAINERS:
+                raise ConfigError('%s.drainer: use %s, not %r' % (where, ', '.join(DRAINERS), x['drainer']))
+        return {'id': None if x.get('id') is None else str(x['id']),
+                'bowls': bowls, 'drainer': drainer, 'hearth': hearth, 'opening': opening, 'kind': kind, 'width': size[0], 'depth': size[1], 'at': self.along(x, where),
                 'wall': x.get('wall'), 'side': words.get('side'), 'facing': words.get('facing'),
                 'corner': words.get('corner'), 'flip': bool(x.get('flip', False)),
                 'label': None if x.get('label') is None else str(x['label']), 'where': where}
@@ -691,7 +853,7 @@ class Loader(object):
                 raise ConfigError('%s.ref: no stair %r on an earlier sheet' % (where, x['ref']))
             st = dict(src[0], ref=fid)                  # the sheet it is drawn on, which this one cannot do without
             st['show'] = x.get('show', 'above')
-            st['label'] = x.get('label', 'DN' if st['show'] == 'above' else 'UP')
+            st['label'] = x.get('label', 'UP' if st['show'] == 'below' else 'DN')   # it is on the level above
             return st
         path = [self.pt(p, where + '.path') for p in _need(x, 'path', where)]
         legs = len(path) - 1
@@ -724,6 +886,7 @@ class Loader(object):
         going = self.num(x.get('going', self.defaults['going']), where + '.going')
         if going <= 0:
             raise ConfigError('%s.going: a tread is some way deep, not %g' % (where, going))
+        riser = None if x.get('riser') is None else self.some(x['riser'], where + '.riser', 'a riser')
         width = per_leg('width', 0.9)
         treads = [None if a is None else int(round(a)) for a in per_leg('treads')]
         if [a for a in width if a is None or a <= 0]:
@@ -736,7 +899,7 @@ class Loader(object):
         show = x.get('show', 'all' if cut is None else 'below')
         return {'id': str(x.get('id', 'stair')), 'path': path,
                 'width': width, 'treads': treads,
-                'going': going,
+                'going': going, 'riser': riser,
                 'turns': tn, 'reach': reach, 'cut': None if cut is None else self.num(cut, where + '.cut_risers'),
                 'show': show, 'label': x.get('label', 'UP'), 'where': where}
 
