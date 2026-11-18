@@ -72,6 +72,22 @@ def test_connections_are_held_to_what_the_source_shows():
     assert said(house('connections: [[A, D]]'), 'error') == ['connections[0]: no as-built sheet has a room called D']
 
 
+def test_an_open_side_is_a_way_through():
+    """A divider parts one open space into two rooms: they are open to
+    each other, so a way through between them is there, as the walk
+    from the front door already knew."""
+    text = (ROOMS % ('connections: [[A, B], [A, C], {opening: [C, A]}]', '')).replace(
+        '      - {id: cup, from: [0, 4], to: [4, 4]}\n', '').replace(
+        '    openings:', '    dividers:\n      - {from: [0, 4], to: [4, 4]}\n    openings:')
+    got = said(solve.solves(text))
+    assert not any('no way through' in m or 'no opening' in m for m in got), got
+    assert not any('no door leads' in m for m in got), got
+    got = said(solve.solves(text.replace('[A, C]', '[B, C]')))
+    assert any(m.startswith('connections[1]:') and 'not B and C' in m for m in got), got
+    got = said(solve.solves(text.replace('[A, C]', '{door: [A, C]}')))
+    assert 'connections[1]: no door between A and C' in got
+
+
 @pytest.mark.parametrize('bad, why', [
     ('connections: [[A]]', 'name the two rooms'),
     ('connections: [{window: A}]', 'side: the way the window looks'),

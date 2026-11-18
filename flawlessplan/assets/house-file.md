@@ -64,7 +64,8 @@ would be less than 2.0 m over the pitch line, the floor running over the
 rest of the flight, with a balustrade round it.
 
 `connections:` at the top level is what leads where, read off the drawing
-the house came from: `[HALL, KITCHEN]` for any way through,
+the house came from: `[HALL, KITCHEN]` for any way through (a door, an
+opening, or a `dividers` line where the two are open to each other),
 `{door: [HALL, KITCHEN], into: KITCHEN, hinge: s}` for a door (the room
 its leaf swings into, the side its hinge is on), `{opening: [A, B]}`,
 `{window: KITCHEN, side: s}`; `outside` is past the building. It is held

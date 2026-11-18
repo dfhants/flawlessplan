@@ -588,6 +588,15 @@ class Plan(object):
                 link['hinge'] = 'pair' if o['pair'] else compass(_sub(hinge, o['centre']))
             o['link'] = link
             self.links.append(link)
+        self.open_sides = []                            # a divider parts an open space: no wall there
+        for i, (d0, d1) in enumerate(self.spec['dividers']):
+            v = _unit(d0, d1)[0]
+            for j in range(1, 10):
+                p = _add(d0, _sub(d1, d0), j/10.0)
+                a, b = self.room_at(_add(p, (-v[1], v[0]), PROBE)), self.room_at(_add(p, (v[1], -v[0]), PROBE))
+                if a is not None and b is not None and a is not b and not any(
+                        set(map(id, s['rooms'])) == set((id(a), id(b))) for s in self.open_sides):
+                    self.open_sides.append({'rooms': (a, b), 'divider': i})
 
     def passages(self):
         """The links a person walks through: every door and opening that
@@ -606,11 +615,8 @@ class Plan(object):
                 graph.setdefault(id(b), set()).add(id(a))
         for k in self.passages():
             join(*k['rooms'])
-        for d0, d1 in self.spec['dividers']:            # a divider parts an open space: no wall there
-            for i in range(1, 10):
-                p = _add(d0, _sub(d1, d0), i/10.0)
-                v = _unit(d0, d1)[0]
-                join(self.room_at(_add(p, (-v[1], v[0]), PROBE)), self.room_at(_add(p, (v[1], -v[0]), PROBE)))
+        for s in self.open_sides:
+            join(*s['rooms'])
         start = set([id(OUTSIDE)]) if id(OUTSIDE) in graph else set()
         for st in self.spec['stairs']:
             if st.get('ref') is not None:               # it arrives here: the room at its head

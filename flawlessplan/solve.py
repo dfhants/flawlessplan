@@ -328,6 +328,8 @@ def connected(wanted, plans):
         for c in want:
             k = next((k for k in left if _fits(c, k) and same(c, k)), None)
             if k is None:
+                if c['kind'] in ('way', 'opening') and any(same(c, s) for s in p.open_sides):
+                    continue                            # open to each other: a divider, no wall
                 unmet.append(c)
                 continue
             left.remove(k)
