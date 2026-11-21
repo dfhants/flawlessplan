@@ -12,7 +12,7 @@ import os
 import re
 import shutil
 from urllib.parse import quote
-from . import __version__, render, report
+from . import __version__, render, report, units
 
 VARS = {'INK': 'var(--ink)', 'SOFT': 'var(--ink-soft)', 'FLOOR': 'var(--floor)',
         'FIT': 'var(--fit)', 'RED': 'var(--red)', 'BLUE': 'var(--blue)', 'GRID': 'var(--grid)'}
@@ -113,9 +113,9 @@ def said(info):
         out.append('<h3>Rooms, clear inside</h3><table>')
         for r in info['rooms']:
             shape = report.SHAPES.get(r['shape'])
-            out.append('<tr><td>%s%s</td><td>%.2f × %.2f</td><td>%.1f m²</td></tr>'
+            out.append('<tr><td>%s%s</td><td>%s</td><td>%s</td></tr>'
                        % (e(r['name']), '<small>%s</small>' % shape if shape else '',
-                          r['w'], r['h'], r['area']))
+                          e(r['size']), e(r['floor'])))
         out.append('</table>')
     for key, head, items in info['groups']:
         out.append('<h3 class="%s">%s</h3><ul>%s</ul>'
@@ -236,11 +236,11 @@ def index(houses):
             '    <li><a class="house" href="%s/index.html">\n'
             '      <div class="thumb"><svg class="draw" viewBox="%s %s %s %s" role="img" aria-label="%s">\n%s\n</svg></div>\n'
             '      <div class="body">\n        <h2>%s</h2>\n'
-            '        <p class="figures">%s · %d sheet%s · %.1f m² gross</p>\n%s'
+            '        <p class="figures">%s · %d sheet%s · %s gross</p>\n%s'
             '        <ul class="sheets">%s</ul>\n      </div>\n    </a></li>'
             % (e(quote(name)), x, y, w, h, e(first.title.title()), '\n'.join(first.lines), e(s.house['name']),
                '%d levels' % levels if levels > 1 else '1 level', len(plans), '' if len(plans) == 1 else 's',
-               first.plan.gross,
+               units.area(first.plan.gross, s.house.get('units', 'metric')),
                '        <p class="found">%d problem%s found</p>\n' % (found, '' if found == 1 else 's') if found else '',
                ''.join('<li%s>%s</li>' % (' class="changes"' if p.base else '', e(p.tab)) for p in plans)))
     tokens = asset('page.css').split('*{box-sizing')[0]         # the colours and faces, as the house pages have them

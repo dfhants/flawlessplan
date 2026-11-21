@@ -42,6 +42,7 @@ flawlessplan/geom.py        one sheet's geometry: walls as polygons, openings, r
 flawlessplan/stairs.py      flights, landings, winders, the cut
 flawlessplan/fittings.py    what is built in: the kinds, their usual sizes, each one's symbol
 flawlessplan/labels.py      where each room's label goes
+flawlessplan/units.py       how a size is written: metres, and feet beside them for `units: both`
 flawlessplan/solve.py       a house solved once: every sheet, what it changes, its labels, its notes
 flawlessplan/render.py      a solved sheet as SVG; the drawing styles. Works nothing out
 flawlessplan/outline.py     the dimensioned outline sheet

@@ -12,6 +12,7 @@ import os
 import re
 import math
 import yaml
+from . import units
 from .expr import Scope, ExprError, imperial
 from .geom import inner_ring, signed_area, arc
 from .fittings import KINDS, BOWLS, DRAINERS, OPENING
@@ -73,7 +74,7 @@ NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_-]*\Z')     # \Z: `$` would let an id
 _CURVE = ('rise', 'radius', 'via', 'toward')
 KNOWN = {
     'top': ('house', 'defaults', 'survey', 'lines', 'parts', 'levels', 'sheets', 'outline', 'connections'),
-    'house': ('name', 'front', 'front_note', 'private', 'north'),
+    'house': ('name', 'front', 'front_note', 'private', 'north', 'units'),
     'outline': ('sheets', 'notes'),
     'sheet': ('id', 'title', 'tab', 'level', 'scheme', 'changes', 'extends', 'hidden', 'demolition', 'unlabelled',
               'require', 'envelope', 'use', 'omit', 'notes', 'underlay', 'walls', 'dividers', 'openings', 'rooms',
@@ -425,6 +426,8 @@ class Loader(object):
                               'level, and says which with `level:`' % self.path)
         if 'shell' in self.raw:
             raise ConfigError('%s: `shell:` is now `outline:`, and lists `sheets:`' % self.path)
+        if h.get('units', 'metric') not in units.UNITS:
+            raise ConfigError('house.units: %s, not %r' % (' or '.join(units.UNITS), h['units']))
         if h.get('front') is not None and h['front'] not in COMPASS:
             raise ConfigError('house.front: use one of %s, not %r' % (', '.join(COMPASS), h['front']))
         sheets = self.raw.get('sheets')
@@ -452,7 +455,7 @@ class Loader(object):
             self.levels.append(str(v))
         out = {'name': str(h.get('name') or stem(self.path)),
                'front': h.get('front'), 'front_note': None if h.get('front_note') is None else str(h['front_note']),
-               'private': bool(h.get('private', False)),
+               'private': bool(h.get('private', False)), 'units': h.get('units', 'metric'),
                'north': self.num(h.get('north', 0), 'house.north') % 360.0,
                'defaults': self.defaults, 'names': dict(self.scope.names),
                'status': dict(self.status), 'written': dict(self.written), 'scope': self.scope, 'sheets': [],

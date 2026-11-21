@@ -49,7 +49,9 @@ checks so nobody takes it for a mistake of the tracing.
 `house:` takes `name`, `front` (the side the front is on), `front_note`,
 `private: true` for a real home, and `north:` — true north as an angle
 clockwise from up the page (`north: -45` is up and to the left), which
-turns the compass. A key the engine does not read, anywhere in the file,
+turns the compass. `units: both` gives every area in square feet beside the square
+metres, and each room's size in feet and inches in the report and the
+panel; `metric`, the default, gives metres alone. A key the engine does not read, anywhere in the file,
 is reported, never passed over.
 
 `levels:` lists the storeys bottom up, each an id or `{id: ground,

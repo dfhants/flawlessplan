@@ -6,6 +6,7 @@ what the tests hold that house to.
 """
 import json
 from .model import NOTE_GROUPS
+from . import units
 
 LEVELS = {'error': 0, 'warn': 1, 'info': 2}
 
@@ -184,16 +185,17 @@ def differences(want, got, where='', key=None):
     return [] if want == got else ['%s: %r expected, %r found' % (where, want, got)]
 
 
-def info(plan, scope):
+def info(plan, scope, unit='metric'):
     """What goes beside a sheet's drawing: its figures, its rooms as
     measured, and its notes by kind with their names filled in from
     `scope`."""
     fl = plan.spec
     return {'title': fl['title'],
             'summary': scope.text(fl['notes']['summary']),
-            'figures': [('Gross external', '%.1f m²' % plan.gross),
-                        ('Inside the walls', '%.1f m²' % plan.internal)],
-            'rooms': [{'name': r['name'], 'w': r['w'], 'h': r['h'], 'area': r['area'], 'shape': r['shape']}
+            'figures': [('Gross external', units.area(plan.gross, unit)),
+                        ('Inside the walls', units.area(plan.internal, unit))],
+            'rooms': [{'name': r['name'], 'w': r['w'], 'h': r['h'], 'area': r['area'], 'shape': r['shape'],
+                       'size': units.size(r['w'], r['h'], unit), 'floor': units.area(r['area'], unit)}
                       for r in plan.rooms],
             'groups': [(k, head, [scope.text(t) for t in fl['notes'][k]])
                        for k, head in NOTE_GROUPS if fl['notes'][k]]}
@@ -207,8 +209,8 @@ def info_md(i):
     out += ['%s: %s  ' % f for f in i['figures']] + ['']
     if i['rooms']:
         out += ['| Room | Clear size | Area | |', '|---|---|---|---|']
-        out += ['| %s | %.2f × %.2f m | %.1f m² | %s |'
-                % (r['name'], r['w'], r['h'], r['area'], SHAPES.get(r['shape'], '')) for r in i['rooms']]
+        out += ['| %s | %s | %s | %s |'
+                % (r['name'], r['size'], r['floor'], SHAPES.get(r['shape'], '')) for r in i['rooms']]
         out.append('')
     for _, head, items in i['groups']:
         out += ['## ' + head, ''] + ['- ' + t for t in items] + ['']

@@ -5,7 +5,7 @@ Nothing is worked out here: the plan, the stairs and where each label goes
 come solved (solve.Sheet), and this writes them down.
 """
 import math
-from . import geom, fittings
+from . import geom, fittings, units
 from .labels import tw
 
 U = 100.0
@@ -302,7 +302,7 @@ def draw(sheet):
             drop = 0.60
     # the one line that is drawn: what the sheet is. Everything else said
     # about it is in report.info(), beside the drawing and not in it.
-    title = '%s · %.1f m² gross' % (fl['title'], plan.gross)
+    title = '%s · %s gross' % (fl['title'], units.area(plan.gross, house.get('units', 'metric')))
     sh.text((x0, dy1 + 0.85 + drop), title, 'note', anchor='start')
 
     left = 2.6 if front == 'west' else 1.2

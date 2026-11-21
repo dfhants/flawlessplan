@@ -6,6 +6,7 @@ report, not something found out when the sheet is drawn.
 """
 from shapely.geometry import LineString, Point, box
 from shapely.prepared import prep
+from . import units
 
 # Glyph advance in metres at each label size, measured off a render. They
 # keep a label inside the room it names; remeasure if a font or size changes.
@@ -31,7 +32,7 @@ def layouts(r, W, H):
     An item is (dx, dy, text, class, rot), offsets in metres from the centre."""
     name, small = r['name'], r.get('size') == 'small'
     dims = '%.2f × %.2f m' % (r['w'], r['h'])
-    area = '%.1f m²' % r['area']
+    area = units.area(r['area'], r.get('units', 'metric'))
     if r.get('zone'):                               # not laid out yet: what it is for, and how much there is
         items = [(0, -0.36, name, 'zonelabel', None)]
         if r['sub']:
@@ -136,7 +137,7 @@ def outside(r, side, envelope, front=False):
     edge = (bx0 if dx < 0 else bx1 if dx > 0 else cx, by0 if dy < 0 else by1 if dy > 0 else cy)
     out = (ex0, ey0, ex1, ey1)[(0, 1, 2, 3)[('west', 'north', 'east', 'south').index(side)]]
     clear = 0.75 if front and abs((edge[0] if dx else edge[1]) - out) < 0.45 else 0.0   # the caption stands off the outermost face
-    second = r['sub'] or ('%.1f m²' % r['area'] if r.get('zone') or not r['dims']
+    second = r['sub'] or (units.area(r['area'], r.get('units', 'metric')) if r.get('zone') or not r['dims']
                           else '%.2f × %.2f m' % (r['w'], r['h']))
     name = 'zonelabel' if r.get('zone') else 'rmname small'
     rot = {'west': -90, 'east': 90}.get(side)

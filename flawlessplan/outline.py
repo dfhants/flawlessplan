@@ -4,6 +4,7 @@ dimensioned, beside each sheet's gross area. Nothing on it is written by
 hand.
 """
 import math
+from . import units
 from .render import Canvas, path, n2, dim, U
 
 GAP = 5.20               # clear space between one plan and the next
@@ -51,7 +52,7 @@ def draw(house, plans):
         sh.out('<path d="%s" class="env"/>' % path(pts))
         bx0, by0, bx1, by1 = plan.E.bounds
         sh.text(((x0+x1)/2.0, y0 - 2.70), plan.spec['title'], 'sheetname')
-        sh.text(((x0+x1)/2.0, y0 - 2.22), '%.1f m² gross external' % plan.gross, 'caption')
+        sh.text(((x0+x1)/2.0, y0 - 2.22), '%s gross external' % units.area(plan.gross, house.get('units', 'metric')), 'caption')
         for h in plan.env_hosts:
             a, b = h.face
             length = math.hypot(b[0]-a[0], b[1]-a[1])
@@ -72,7 +73,7 @@ def draw(house, plans):
     sh.text((tx, ty), 'GROSS AREA', 'sheetname', anchor='start')
     row = ty + 0.92
     for fid in ids:
-        sh.text((tx, row), '%-10s %.1f m²' % (plans[fid].spec['tab'], plans[fid].gross),
+        sh.text((tx, row), '%-10s %s' % (plans[fid].spec['tab'], units.area(plans[fid].gross, house.get('units', 'metric'))),
                 'figure', anchor='start')
         row += 0.56
     vx, vy = x0 - 3.2, y0 - 3.6
@@ -89,6 +90,6 @@ def info(house, plans):
     text = house['scope'].text
     ids = cfg.get('sheets') or _distinct(house)
     return {'title': 'OUTLINE', 'summary': text(n['summary']),
-            'figures': [(plans[f].spec['tab'], '%.1f m² gross' % plans[f].gross) for f in ids],
+            'figures': [(plans[f].spec['tab'], '%s gross' % units.area(plans[f].gross, house.get('units', 'metric'))) for f in ids],
             'rooms': [],
             'groups': [(k, head, [text(t) for t in n[k]]) for k, head in NOTE_GROUPS if n[k]]}

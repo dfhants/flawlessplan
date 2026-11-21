@@ -375,3 +375,13 @@ sheets:
     assert edit.line_of(text, 'sheets.ground.rooms[0]: whatever') == 5
     assert edit.line_of(text, 'sheet ground: sheets.ground.rooms[1]: x') == 10
     assert edit.line_of(text, 'survey.W: x') == 1 and edit.line_of(text, 'nothing here') is None
+
+
+def test_units_both_gives_square_feet_beside_square_metres():
+    s = solve.solves((ROOMS % ('', '')).replace('survey:', 'house: {units: both}\nsurvey:', 1))
+    sh = s.plans()[0]
+    assert sh.info['figures'][0][1].endswith(' sq ft)')
+    assert "'" in sh.info['rooms'][0]['size'] and 'sq ft' in sh.info['rooms'][0]['floor']
+    assert any('sq ft) gross' in l for l in sh.lines)
+    with pytest.raises(model.ConfigError, match='house.units'):
+        solve.solves((ROOMS % ('', '')).replace('survey:', 'house: {units: feet}\nsurvey:', 1))
