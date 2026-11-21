@@ -145,7 +145,8 @@ sheets:
 
 def test_a_level_says_how_high_it_is():
     h = model.loads(STAIR)
-    assert h['heights'] == {'ground': {'height': 2.85, 'floor_depth': None}, 'first': {'height': 2.4, 'floor_depth': 0.25}}
+    assert h['heights'] == {'ground': {'height': 2.85, 'floor_depth': None, 'floor': 0.0},
+                            'first': {'height': 2.4, 'floor_depth': 0.25, 'floor': 2.85}}
     with pytest.raises(model.ConfigError, match=r'levels\[0\]: a level is its id'):
         model.loads(STAIR.replace('{id: ground, height: 2.85}', '{id: ground, tall: 2.85}'))
 

@@ -11,7 +11,7 @@ import os
 from shapely.errors import ShapelyError
 from shapely.geometry import LineString, Polygon, box
 from shapely.ops import unary_union
-from . import model, geom, stairs, labels, report, render, outline
+from . import model, geom, stairs, labels, report, render, outline, units
 
 def house_file(path):
     """The house file a path names: itself, or `house.yaml` in a folder."""
@@ -87,8 +87,13 @@ class Sheet(object):
         for g in self.stairs:
             g['void'], g['rail'] = stairs.well(g, plan.solid)
         plan.reach(list(zip(fl['stairs'], self.stairs)))
+        floors = house.get('floors') or {}
         for r in plan.rooms + plan.zones:
             r['units'] = house.get('units', 'metric')
+            lv = r.get('level')
+            if lv and lv != fl['level'] and r.get('sub') is None:     # a room on another level says how far up it is
+                r['sub'] = (('%+.2f m · ' % floors[lv]) if lv in floors else (lv + ' · ')) + '{area:.1f} m²'
+        self.steps = self._steps(floors)
         self.labels = self._place()
         self.info = report.info(plan, self.scope, house.get('units', 'metric'))
         self._drawn = None
@@ -100,6 +105,8 @@ class Sheet(object):
         the floor's depth known, the well is as far back from the head as
         there would be less than HEADROOM over the pitch line: below that the
         floor runs over the flight."""
+        if st.get('leveled'):
+            return self._leveled(st)
         g = stairs.build(st)
         heights, levels = self.house['heights'], self.house['levels']
         H = heights.get(st['level'], {}).get('height')
@@ -130,11 +137,72 @@ class Sheet(object):
                       % (where, (2*R + G)*1000, R*1000, G*1000, lo*1000, hi*1000, why))
         return g
 
+    def _steps(self, floors):
+        """Where the floor steps between two rooms open to each other on
+        different levels: the stretch of the divider between them, and how
+        far the floor rises or drops across it."""
+        plan, fl = self.plan, self.plan.spec
+        out = []
+        for s in plan.open_sides:
+            a, b = s['rooms']
+            la, lb = a.get('level') or fl['level'], b.get('level') or fl['level']
+            if la == lb:
+                continue
+            line = LineString(fl['dividers'][s['divider']])
+            part = line.intersection(a['face'].buffer(0.05)).intersection(b['face'].buffer(0.05))
+            if part.is_empty or part.length < 0.05:
+                continue
+            rise = floors[lb] - floors[la] if la in floors and lb in floors else None
+            out.append({'line': part, 'rooms': (a, b), 'rise': rise})
+            if rise is not None and abs(rise) > 0.38:
+                plan.warn('%s and %s are open to each other and %.2f m apart in level: with no stair or balustrade '
+                          'between them that is a drop' % (a['name'], b['name'], abs(rise)), 'info')
+        return out
+
+    def _leveled(self, st):
+        """A stair that says which levels it joins, as this sheet draws it:
+        each flight by whether its ends are levels this sheet holds. Each
+        flight's riser is its rise over its risers, and is held to Approved
+        Document K. The flights are checked once, on the sheet the stair is
+        written on."""
+        plan, fl = self.plan, self.plan.spec
+        depths = dict((lv, h['floor_depth']) for lv, h in self.house['heights'].items() if h.get('floor_depth') is not None)
+        try:
+            g = stairs.leveled(st, self.house['floors'], set(fl['levels']), fl['level'], depths)
+        except ValueError as e:
+            raise ValueError(str(e))
+        if not [f for f in g['flights'] if f['part'] not in (None, 'none')]:
+            plan.warn('%s: the stair joins %s, and this sheet holds none of them' % (
+                st['where'] if st.get('ref') is None else 'sheets.%s.stairs' % fl['id'],
+                ', '.join(sorted(set([f['from'] for f in g['flights']] + [st['to']])))))
+        if st.get('ref') is not None or not g['going']:
+            return g
+        G, where = g['going'], st['where']
+        why = 'a stair built before the regulations, or a drawing error'
+        for f in g['flights']:
+            R = f['riser']
+            if R <= 0:
+                plan.warn('%s: the flight from %s up to %s climbs %.3f m — %s is not above %s'
+                          % (where, f['from'], f['to'], f['fb'] - f['fa'], f['to'], f['from']), 'error')
+                continue
+            pitch = math.degrees(math.atan2(R, G))
+            plan.flights.append({'id': '%s %s-%s' % (st['id'], f['from'], f['to']), 'risers': f['risers'],
+                                 'riser': round(R, 4), 'going': round(G, 4), 'pitch': round(pitch, 1),
+                                 '2R+G': round(2*R + G, 4)})
+            if pitch > stairs.STEEPEST:
+                plan.warn('%s: the flight from %s to %s pitches at %.1f° — steeper than %g°: %s'
+                          % (where, f['from'], f['to'], pitch, stairs.STEEPEST, why))
+            lo, hi = stairs.STRIDE
+            if not lo <= 2*R + G <= hi:
+                plan.warn('%s: the flight from %s to %s: twice the riser and the going is %.0f mm (riser %.0f, going %.0f), outside %.0f–%.0f: %s'
+                          % (where, f['from'], f['to'], (2*R + G)*1000, R*1000, G*1000, lo*1000, hi*1000, why))
+        return g
+
     def _place(self):
         """Each room's label as (items, x, y), in the plan's room order."""
         plan, fl = self.plan, self.plan.spec
         blocks = [Polygon(a['pts']) for a in fl['areas'] if a['style'] == 'fitting']
-        blocks += [g[k] for g in self.stairs for k in ('block', 'void') if g[k] is not None]
+        blocks += [g[k] for g in self.stairs for k in ('block', 'void', 'open') if g.get(k) is not None]
         blocks += [f['floor'] for f in plan.fittings]
         for r in plan.rooflights:
             blocks.append(r['shape'])
@@ -232,6 +300,38 @@ class Outline(Sheet):
         return outline.draw(self.house, self._plans)
 
 
+class Combined(Sheet):
+    """Several plan sheets set side by side, each as it is drawn on its
+    own, its title under it. Nothing is worked out again."""
+    kind = 'combined'
+    GAP = 1.2                   # metres between one drawing and the next
+
+    def __init__(self, house, spec, members):
+        self.house, self.plan, self.base, self.members = house, None, None, members
+        self.id, self.tab, self.title, self.hidden = spec['id'], spec['tab'], spec['title'], spec['hidden']
+        self.level = self.scheme = None
+        n = model.notes(spec['notes'], spec['where'])
+        text = house['scope'].text
+        self.info = {'title': self.title, 'summary': text(n['summary']),
+                     'figures': [(m.tab, '%s gross' % units.area(m.plan.gross, house.get('units', 'metric'))) for m in members],
+                     'rooms': [], 'groups': [(k, head, [text(t) for t in n[k]]) for k, head in model.NOTE_GROUPS if n[k]]}
+        self._drawn = None
+
+    def _draw(self):
+        out, x, top, bottom = [], 0.0, None, None
+        for m in self.members:
+            vx, vy, vw, vh = m.vb
+            top = vy if top is None else min(top, vy)
+            bottom = vy + vh if bottom is None else max(bottom, vy + vh)
+        for m in self.members:
+            vx, vy, vw, vh = m.vb
+            out.append('<g transform="translate(%s 0)">' % render.n2(x - vx))
+            out.extend(m.lines)
+            out.append('</g>')
+            x += vw + self.GAP*render.U
+        return out, (0.0, top, x - self.GAP*render.U, bottom - top)
+
+
 class Solved(object):
     def __init__(self, house, sheets, path):
         self.house, self.sheets, self.path = house, sheets, path
@@ -265,15 +365,101 @@ def solved(house, path='<house>'):
     sheets, done = [], {}
     if len(plans) > 1 or house['outline']:
         sheets.append(_worked('outline', Outline, house, plans))
-    for fl in house['sheets']:
+    sets = list(house.get('sets') or [])
+    for i, fl in enumerate(house['sheets']):
+        for st in [st for st in sets if st['at'] == i]:
+            sheets.append(st)
         done[fl['id']] = _worked(fl['id'], Sheet, house, plans[fl['id']], extra, done.get(fl['changes']))
         sheets.append(done[fl['id']])
+    sheets += [st for st in sets if st['at'] >= len(house['sheets'])]
+    sheets = [Combined(house, st, [done[i] for i in st['shows']]) if isinstance(st, dict) else st for st in sheets]
     first = next((sh.plan for sh in sheets if sh.plan is not None), None)
     for where, k in house.get('unknown') or []:     # said where every sheet's checks are read, once
         first.warn('%s: `%s` is not a key the engine reads, so it does nothing' % (where, k))
     if house.get('connections'):
         connected(house['connections'], [sh.plan for sh in sheets if sh.plan is not None and sh.plan.spec['changes'] is None])
+    stacked(house, [sh for sh in sheets if sh.plan is not None])
     return Solved(house, sheets, path)
+
+
+CLEAR = 2.0                     # the least clear height under a floor that a room or a flight should have
+OVERLAP = 0.05                  # m² of one floor over another before the one is said to be over the other
+
+
+def _over(sheet, sheets):
+    """The sheets that stand with this one in the same house: each level's
+    sheet of the same proposal where there is one, else its as-built one."""
+    mine = set(sheet.plan.spec['levels'])
+    out = {}
+    for t in sheets:
+        if t is sheet or set(t.plan.spec['levels']) & mine:
+            continue
+        if t.scheme != sheet.scheme and t.plan.spec['changes'] is not None:
+            continue
+        for lv in t.plan.spec['levels']:
+            if lv not in out or (t.scheme == sheet.scheme and out[lv].scheme != sheet.scheme):
+                out[lv] = t
+    return set(out.values())
+
+
+def stacked(house, sheets):
+    """Where one level stands over another: the clear height under it.
+    Each room is given the least clear height over it (`clear`, with what
+    is over it) and one under CLEAR is said; so is a flight of a stair
+    that passes under a floor with less than stairs.HEADROOM over its
+    treads, outside the well cut in that floor for it. Only levels whose
+    floors are known are compared."""
+    floors, heights = house.get('floors') or {}, house.get('heights') or {}
+    depth = lambda lv: (heights.get(lv) or {}).get('floor_depth') or 0.0
+    for s in sheets:
+        plan = s.plan
+        on = lambda r, p=plan: r.get('level') or p.spec['level']
+        above = []
+        for t in _over(s, sheets):
+            holes = unary_union([g[k] for g in t.stairs for k in ('void', 'open') if g.get(k) is not None] or [Polygon()])
+            for q in t.plan.rooms:
+                lv = on(q, t.plan)
+                if floors.get(lv) is not None:
+                    above.append((floors[lv] - depth(lv), q, t, holes))
+        if not above:
+            continue
+        for r in plan.rooms:
+            lv = on(r)
+            if floors.get(lv) is None:
+                continue
+            over = [(under - floors[lv], q, t) for under, q, t, _ in above
+                    if under > floors[lv] and q['face'].intersection(r['face']).area > OVERLAP]
+            if not over:
+                continue
+            clear, q, t = min(over, key=lambda o: o[0])
+            r['clear'] = {'height': round(clear, 3), 'under': q['name'], 'sheet': t.id}
+            if clear < CLEAR - 1e-9:
+                plan.warn('%s: %s has %.2f m clear under %s (sheet %s), less than %.1f m: the %s floor is at %g, %s\'s at %g'
+                          % (r['where'], r['name'], clear, q['name'] or 'a space with no room in it', t.id, CLEAR,
+                             lv, floors[lv], q['name'] or 'it', floors[on(q, t.plan)]))
+        for st, g in zip(plan.spec['stairs'], s.stairs):
+            if st.get('ref') is not None or not g.get('flights'):
+                continue
+            lay = stairs.layout(st)
+            for f in g['flights']:
+                worst = None
+                for k in range(f['k0'], f['k1'] + 1):
+                    unit = stairs.unit_shape(lay, k)
+                    if unit is None:
+                        continue
+                    for under, q, t, holes in above:
+                        room = under - f['z'][k]
+                        if room >= stairs.HEADROOM or under <= f['fa']:
+                            continue
+                        bare = unit.difference(holes).intersection(q['face'])
+                        if bare.area > OVERLAP/5 and (worst is None or room < worst[0]):
+                            worst = (room, q, t)
+                if worst:
+                    room, q, t = worst
+                    plan.warn('%s: the flight from %s to %s has %.2f m headroom under %s (sheet %s), less than %.1f m: '
+                              'open the well over it there, or the floor over it is wrong'
+                              % (st['where'], f['from'], f['to'], max(0.0, room), q['name'] or 'the floor', t.id,
+                                 stairs.HEADROOM))
 
 
 def _called(r):

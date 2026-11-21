@@ -213,3 +213,13 @@ def test_a_change_goes_in_whole_or_not_at_all_and_the_pages_follow(house, ws):
     with pytest.raises(edit.Refused, match='already in it once'):
         edit.same(text(house), 'abcdef', 'name: HALL')
     assert edit.same(text(house), edit.version(text(house))) is None and edit.same(text(house), None) is None
+
+
+def test_a_sheet_another_shows_is_not_binned(house, ws):
+    t = text(house).replace('\n# what is said of the outline', '  - {id: both, shows: [first, wider]}\n\n# what is said of the outline')
+    assert 'id: both' in t
+    with open(os.path.join(house, 'house.yaml'), 'w') as fh:
+        fh.write(t)
+    edit.hide_sheet(house, 'wider', ws=ws)
+    with pytest.raises(edit.Refused, match=r'wider cannot be binned while both \(`shows:`\) depends on it'):
+        edit.bin_sheet(house, 'wider', ws=ws)

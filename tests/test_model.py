@@ -341,7 +341,7 @@ def test_joined_notes_keep_the_first_summary_and_every_entry():
     ('stairs: [{path: [[2, 2], [2, 4]], going: -0.2}]', 'sheets.ground.stairs[0].going'),
     ('stairs: [{path: [[2, 2], [2, 4]], cut_risers: x}]', "sheets.ground.stairs[0].cut_risers: unknown name 'x'"),
     ('stairs: [{path: [[2, 2], [2, 4], [4, 4]], turns: []}]', 'sheets.ground.stairs[0].turns: one per corner (1)'),
-    ('stairs: [{path: [[2, 2], [2, 4], [4, 4]], turns: [spiral]}]', 'sheets.ground.stairs[0].turns: use landing or {winders: n}'),
+    ('stairs: [{path: [[2, 2], [2, 4], [4, 4]], turns: [spiral]}]', 'sheets.ground.stairs[0].turns: use landing, {landing: a level} or {winders: n}'),
     ('stairs: [{path: [[2, 2], [2, 4], [4, 4]], turns: [{winders: 100000}]}]', 'up to six winders'),
     ('stairs: [{path: [[2, 2], [2, 4], [4, 4]], turns: [{winders: -2}]}]', 'up to six winders'),
     ('stairs: [{ref: nope.main}]', "sheets.ground.stairs[0].ref: no stair 'nope.main' on an earlier sheet"),

@@ -37,12 +37,13 @@ def _add(a, b, k=1.0):
     return (a[0]+b[0]*k, a[1]+b[1]*k)
 
 
-def build(st):
-    """Polygons, tread lines, walking line and labels for one stair."""
+def layout(st):
+    """A stair laid out along its path: each leg's direction and length,
+    where its treads start and end, and its units in walking order —
+    ('tread', leg, i, n) and ('corner', j, k) — each one riser."""
     P, W, turns = st['path'], st['width'], st['turns']
     legs = len(P) - 1
     reach = st.get('reach') or [False]*(legs - 1)
-    back = {}                                       # corner -> level run its first winder takes in
     D, L = [], []
     for a, b in zip(P, P[1:]):
         d = (b[0]-a[0], b[1]-a[1])
@@ -72,6 +73,16 @@ def build(st):
         if i < legs - 1:
             units.extend(('corner', i+1, k) for k in range(max(1, turns[i])))
 
+    return {'P': P, 'W': W, 'D': D, 'L': L, 'turns': turns, 'reach': reach, 'legs': legs,
+            'units': units, 'flats': flats, 'spans': spans}
+
+
+def build(st):
+    """Polygons, tread lines, walking line and labels for one stair."""
+    lay = layout(st)
+    P, W, D, L, turns, reach, legs = (lay[k] for k in ('P', 'W', 'D', 'L', 'turns', 'reach', 'legs'))
+    units, flats, spans = lay['units'], lay['flats'], lay['spans']
+    back = {}                                       # corner -> level run its first winder takes in
     cut, show = st['cut'], st['show']
     at = None                                       # unit index the cut falls in
     well_from = st.get('open_from')                 # on the level above: the first unit with no floor over it
@@ -260,3 +271,327 @@ def well(g, solid):
                 pts[end] = _add(pts[end], d, gap/ln)
         out.append(pts)
     return void, out
+
+
+# ---- a stair that says which levels it joins
+#
+# Every unit of the flight has a height: the floor it climbs from, plus a
+# riser for each unit climbed, a riser being the rise between two levels
+# over the risers between them. A sheet holds levels; it draws each flight
+# by where its ends are. Both on the sheet: the whole flight. Only the
+# lower: up to CUT above that floor, then the zigzag. Only the upper: the
+# rest, past the zigzag, with the well under it — or, where that floor's
+# depth is known, as far back as there would be less than HEADROOM under
+# it. Neither: nothing. So between the sheets each flight is drawn once,
+# and nothing in the house file says where to cut it.
+
+CUT = 1.0               # metres over the floor a plan is cut at, for a flight going up from it
+
+
+def flights(st, lay, floors):
+    """The flights between the levels a stair joins, split at each landing
+    that is a level's floor: dicts of `from`, `to`, their floors, the
+    first and last unit, the risers and the rise of each. Raises
+    ValueError when a level it joins has no floor given."""
+    units = lay['units']
+    stops = []
+    for c, lv in enumerate(st['landings']):
+        if lv:
+            stops.append((units.index(('corner', c + 1, 0)), lv))
+    out, k0, a = [], 0, st['from']
+    for cu, lv in stops + [(len(units) - 1, st['to'])]:
+        last = lv == st['to'] and cu == len(units) - 1
+        out.append({'from': a, 'to': lv, 'k0': k0, 'k1': cu, 'risers': cu - k0 + 1 + (1 if last else 0),
+                    'landing': None if last else cu})
+        k0, a = cu + 1, lv
+    for f in out:
+        for k in ('from', 'to'):
+            if floors.get(f[k]) is None:
+                raise ValueError('%s: the stair joins %s, which has no floor height: give `levels` a `floor:` '
+                                 'for each level, or a `height:` for each storey below it' % (st['where'], f[k]))
+        f['fa'], f['fb'] = floors[f['from']], floors[f['to']]
+        f['riser'] = (f['fb'] - f['fa']) / f['risers']
+        f['z'] = dict((k, f['fa'] + (k - f['k0'] + 1)*f['riser']) for k in range(f['k0'], f['k1'] + 1))
+    return out
+
+
+def _cut_unit(lay, f, height):
+    """The first tread of a flight whose top is over `height`, or None."""
+    for k in range(f['k0'], f['k1'] + 1):
+        if f['z'][k] > height + 1e-9 and lay['units'][k][0] == 'tread':
+            return k
+    return None
+
+
+def leveled(st, floors, here, main, depths=None):
+    """One stair that joins levels, as one sheet draws it. `here` is the
+    levels the sheet holds, `main` its own; `depths` the depth of each
+    level's floor, where it is known."""
+    lay = layout(st)
+    P, W, D, units, spans = lay['P'], lay['W'], lay['D'], lay['units'], lay['spans']
+    depths = depths or {}
+    fl = flights(st, lay, floors)
+    drawn, cuts, opened, voids, arrows, ends, floor = set(), [], set(), set(), [], [], []
+    for f in fl:
+        span = set(range(f['k0'], f['k1'] + 1))
+        a_in, b_in = f['from'] in here, f['to'] in here
+        f['part'] = None
+        if a_in and b_in:
+            drawn |= span
+            f['part'] = 'whole'
+        elif a_in:
+            at = _cut_unit(lay, f, f['fa'] + CUT)
+            if at is None:
+                drawn |= span
+                f['part'] = 'whole-up'
+            else:
+                drawn |= set(k for k in span if k < at)
+                cuts.append((at, 'below'))
+                f['part'], f['at'] = 'below', at
+        elif b_in:
+            fd = depths.get(f['to'])
+            if fd is not None:                      # open as far back as the headroom under this floor runs out
+                edge = f['fb'] - fd - HEADROOM
+                seen = set(k for k in span if f['z'][k] > edge + 1e-9)
+                drawn |= seen
+                opened |= seen
+                f['part'] = 'open'
+            else:
+                at = _cut_unit(lay, f, f['fa'] + CUT)
+                if at is None:
+                    voids |= span
+                    f['part'] = 'none'
+                else:
+                    drawn |= set(k for k in span if k > at)
+                    voids |= set(k for k in span if k <= at)
+                    cuts.append((at, 'above'))
+                    f['part'], f['at'] = 'above', at
+        if f['part'] in (None, 'none', 'above') and main in floors and depths.get(main) is not None \
+                and f['fa'] < floors[main]:
+            # a flight passing under this floor: what is too near the floor's underside to walk under is open
+            edge = floors[main] - depths[main] - HEADROOM
+            seen = set(k for k in span if edge + 1e-9 < f['z'][k] <= floors[main] + 1e-9) - drawn
+            if seen and f['part'] != 'above':
+                drawn |= seen
+                opened |= seen
+                f['part'] = f['part'] or 'under'
+        if f['landing'] is not None and f['to'] in here:     # a landing that is this sheet's floor: walked on
+            floor.append(f['landing'])
+
+    polys, lines, cutpts = _draw(st, lay, drawn, cuts)
+    block = _union(polys)
+    void = _union(_draw(st, lay, voids, [])[0]) if voids else None
+    opn = _union(_draw(st, lay, opened, [])[0]) if opened else None
+    landing = _union([_corner_poly(lay, units[k][1]) for k in floor]) if floor else None
+
+    # where along the walking line each unit starts and ends, for the arrows and the ends
+    cum = [0.0]
+    for ln in lay['L']:
+        cum.append(cum[-1] + ln)
+
+    def t_of(p, i):
+        return cum[i] + math.hypot(p[0]-P[i][0], p[1]-P[i][1])
+
+    def unit_t(k):
+        u = units[k]
+        if u[0] == 'corner':
+            return cum[u[1]], cum[u[1]]
+        s, e, n = spans[u[1]]
+        step = math.hypot(e[0]-s[0], e[1]-s[1]) / float(n)
+        return t_of(_add(s, D[u[1]], u[2]*step), u[1]), t_of(_add(s, D[u[1]], (u[2]+1)*step), u[1])
+
+    def point(t):
+        i = max(0, min(len(cum) - 2, next((j for j in range(len(cum) - 1) if t <= cum[j+1] + 1e-9), len(cum) - 2)))
+        return _add(P[i], D[i], t - cum[i]), i
+
+    def run(t0, t1):
+        lo, hi = min(t0, t1), max(t0, t1)
+        pts = [point(lo)[0]] + [P[j] for j in range(1, len(P) - 1) if lo < cum[j] < hi] + [point(hi)[0]]
+        return pts if t0 <= t1 else pts[::-1]
+
+    def across(t, off=0.0):
+        p, i = point(t)
+        p = _add(p, D[i], off)
+        n = (-D[i][1]*W[i]/2.0, D[i][0]*W[i]/2.0)
+        return LineString([_add(p, n), _add(p, n, -1)])
+
+    def dirn(t, sign):
+        return D[point(t)[1]] if sign > 0 else (-D[point(t)[1]][0], -D[point(t)[1]][1])
+
+    gap = BREAK_AMP + 0.03
+    for f in fl:
+        if f['part'] in (None, 'none', 'under'):
+            continue
+        lo = unit_t(f['k0'])[0] if f['k0'] > 0 else 0.0
+        hi = unit_t(f['k1'])[1] if f['landing'] is None else cum[units[f['k1']][1]]
+        if f['landing'] is None:
+            hi = cum[-1]
+        if f['part'] in ('whole', 'whole-up'):
+            down = f['to'] == main and f['from'] != main
+            start, tip = (hi, lo) if down else (lo, hi)
+            ends.append((across(lo, -STEP_OFF_), across(hi, STEP_OFF_), 'both') if f['part'] == 'whole'
+                        else (across(lo, -STEP_OFF_), None, 'leave'))
+        elif f['part'] == 'below':
+            c = cutpts[f['at']]
+            start, tip, down = lo, c - gap, False
+            ends.append((across(lo, -STEP_OFF_), None, 'leave'))
+        elif f['part'] == 'above':
+            c = cutpts[f['at']]
+            start, tip, down = hi, c + gap, True
+            ends.append((across(hi, STEP_OFF_), None, 'arrive'))
+        else:                                       # open: from the head back to where the floor runs over it
+            first = min(k for k in opened if f['k0'] <= k <= f['k1'])
+            start, tip, down = hi, unit_t(first)[0] + 0.12, True
+            ends.append((across(hi, STEP_OFF_), None, 'arrive'))
+        sign = 1 if tip > start else -1
+        a = start + sign*(0.30 if down else 0.0)
+        walk = run(a, tip - sign*0.18)
+        head = (point(tip)[0], dirn(tip, sign))
+        p, i = point(start + sign*0.45)
+        side = (-D[i][1], D[i][0])
+        arrows.append((walk, head, (_add(p, side, W[i]*0.28), 'DN' if down else 'UP')))
+    top = None
+    for f in fl:
+        if f['part'] in ('above', 'open') and f['landing'] is None:
+            n = (-D[-1][1]*W[-1]/2.0, D[-1][0]*W[-1]/2.0)
+            top = (_add(P[-1], n), _add(P[-1], n, -1))
+    goings = [math.hypot(e[0]-s[0], e[1]-s[1]) / float(n) for s, e, n in spans if n]
+    return {'polys': polys, 'lines': lines, 'walk': [], 'head': None, 'label': (None, None), 'arrows': arrows,
+            'risers': len(units) + 1, 'block': block, 'void': void, 'rail': [], 'open': opn,
+            'going': max(goings) if goings else None, 'well_from': None, 'landing': landing,
+            'top': top or (P[-1], P[-1]), 'ends': ends, 'flights': fl}
+
+
+STEP_OFF_ = 0.05
+
+
+def _union(polys):
+    shapes = [p if hasattr(p, 'geom_type') else Polygon(p).buffer(0) for p in polys
+              if hasattr(p, 'geom_type') or len(p) >= 3]
+    return unary_union(shapes) if shapes else None
+
+
+def _corner_poly(lay, j):
+    P, W, D = lay['P'], lay['W'], lay['D']
+    a, b, c = D[j-1], D[j], P[j]
+    ha, hb = W[j]/2.0, W[j-1]/2.0
+    return Polygon([_add(_add(c, a, sa*ha), b, sb*hb) for sa, sb in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
+
+
+def _draw(st, lay, drawn, cuts):
+    """The outline of every drawn run of treads, each closed on a zigzag
+    where a cut ends it, the nosings in them, and the landings and
+    winders whose units are all drawn. Returns (polys, lines, where each
+    cut falls along the walking line)."""
+    P, W, D, units, spans, flats, legs = (lay[k] for k in ('P', 'W', 'D', 'units', 'spans', 'flats', 'legs'))
+    turns, reach = lay['turns'], lay['reach']
+    polys, lines, cutpts, back = [], [], {}, {}
+    cum = [0.0]
+    for ln in lay['L']:
+        cum.append(cum[-1] + ln)
+
+    def quad(i, s, e):
+        n = (-D[i][1]*W[i]/2.0, D[i][0]*W[i]/2.0)
+        return [_add(s, n), _add(e, n), _add(e, n, -1), _add(s, n, -1)]
+
+    def zig(i, c, teeth=2):
+        n = (-D[i][1], D[i][0])
+        m = teeth*2
+        out = []
+        for k in range(m+1):
+            p = _add(c, n, W[i]*(0.5 - k/float(m)))
+            if k not in (0, m):
+                p = _add(p, D[i], BREAK_AMP if k % 2 else -BREAK_AMP)
+            out.append(p)
+        return out
+
+    for i in range(legs):
+        s, e, n = spans[i]
+        idx = [k for k, u in enumerate(units) if u[0] == 'tread' and u[1] == i]
+        if not idx:
+            continue
+        step = math.hypot(e[0]-s[0], e[1]-s[1]) / float(n)
+        runs, j = [], 0
+        while j < n:
+            if idx[j] in drawn:
+                j0 = j
+                while j < n and idx[j] in drawn:
+                    j += 1
+                runs.append({'a': float(j0), 'b': float(j), 'zs': False, 'ze': False})
+            else:
+                j += 1
+        for k, side in cuts:
+            if k not in idx:
+                continue
+            j = idx.index(k)
+            c = _add(s, D[i], (j + 0.5)*step)
+            cutpts[k] = cum[i] + math.hypot(c[0]-P[i][0], c[1]-P[i][1])
+            if side == 'below':
+                r = next((r for r in runs if abs(r['b'] - j) < 1e-9), None)
+                if r is None:
+                    r = {'a': float(j), 'b': float(j), 'zs': False, 'ze': False}
+                    runs.append(r)
+                r['b'], r['ze'] = j + 0.5, True
+            else:
+                r = next((r for r in runs if abs(r['a'] - (j + 1)) < 1e-9), None)
+                if r is None:
+                    r = {'a': float(j + 1), 'b': float(j + 1), 'zs': False, 'ze': False}
+                    runs.append(r)
+                r['a'], r['zs'] = j + 0.5, True
+        for r in runs:
+            pa, pb = _add(s, D[i], r['a']*step), _add(s, D[i], r['b']*step)
+            q = quad(i, pa, pb)
+            if r['zs'] and r['ze']:
+                polys.append(zig(i, pa) + zig(i, pb)[::-1])
+            elif r['ze']:
+                polys.append([q[0]] + zig(i, pb) + [q[3]])
+            elif r['zs']:
+                polys.append(zig(i, pa) + [q[2], q[1]])
+            else:
+                polys.append(q)
+            for k in range(n + 1):
+                t = (k - r['a'])*step
+                if 1e-6 < t < (r['b'] - r['a'])*step - 1e-6:
+                    q2 = quad(i, _add(s, D[i], k*step), _add(s, D[i], k*step))
+                    lines.append((q2[0], q2[3]))
+    for i, s, e in flats:
+        if i < legs - 1 and reach[i] and turns[i] > 1:
+            back[i+1] = math.hypot(e[0]-s[0], e[1]-s[1])
+            continue
+        near = [k for k, u in enumerate(units) if u[0] == 'corner' and u[1] in (i, i+1)]
+        if near and all(k in drawn for k in near):
+            polys.append(quad(i, s, e))
+    for j in range(1, legs):
+        idx = [k for k, u in enumerate(units) if u[0] == 'corner' and u[1] == j]
+        if not idx or not all(k in drawn for k in idx):
+            continue
+        a, b = D[j-1], D[j]
+        c = P[j]
+        ha, hb = W[j]/2.0, W[j-1]/2.0
+        polys.append([_add(_add(c, a, sa*ha - (back.get(j, 0.0) if sa < 0 else 0.0)), b, sb*hb)
+                      for sa, sb in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
+        nw = turns[j-1]
+        if nw > 1:
+            o = _add(_add(c, a, -ha), b, hb)
+            for k in range(1, nw):
+                th = math.radians(90.0*k/nw)
+                ca, sn = math.cos(th), math.sin(th)
+                t = min(2*hb/ca if ca > 1e-9 else 1e9, 2*ha/sn if sn > 1e-9 else 1e9)
+                lines.append((o, _add(_add(o, b, -ca*t), a, sn*t)))
+    return polys, lines, cutpts
+
+
+def unit_shape(lay, k):
+    """The plan of one unit of a stair — a tread, or a landing or a fan of
+    winders as a whole — or None for a corner it shares."""
+    P, W, D, units, spans = lay['P'], lay['W'], lay['D'], lay['units'], lay['spans']
+    u = units[k]
+    if u[0] == 'corner':
+        if u[2] != 0:
+            return None
+        return _corner_poly(lay, u[1])
+    s, e, n = spans[u[1]]
+    step = math.hypot(e[0]-s[0], e[1]-s[1]) / float(n)
+    a, b = _add(s, D[u[1]], u[2]*step), _add(s, D[u[1]], (u[2]+1)*step)
+    m = (-D[u[1]][1]*W[u[1]]/2.0, D[u[1]][0]*W[u[1]]/2.0)
+    return Polygon([_add(a, m), _add(b, m), _add(b, m, -1), _add(a, m, -1)])

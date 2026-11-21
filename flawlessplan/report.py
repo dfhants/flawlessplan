@@ -19,7 +19,10 @@ def facts(plan):
         'gross': round(plan.gross, 2), 'internal': round(plan.internal, 2),
         'rooms': [dict({'id': str(r['id'])} if r['id'] else {},         # what notes and zones call it, where it has one
                        name=r['name'], w=round(r['w'], 3), h=round(r['h'], 3),
-                       area=round(r['area'], 2), shape=r['shape']) for r in plan.rooms],
+                       area=round(r['area'], 2), shape=r['shape'],
+                       **dict([('level', r['level'])] if r.get('level') else [],     # on another level than its sheet
+                              **({'clear': r['clear']} if r.get('clear') else {})))   # the clear height over it
+                  for r in plan.rooms],
         'openings': [{'kind': o['kind'], 'style': o['style'], 'wall': o['host'].name,
                       'width': round(o['width'], 3),
                       'centre': [round(o['centre'][0], 3), round(o['centre'][1], 3)]}
@@ -71,7 +74,8 @@ def snapshot(solved):
     for s in solved.plans():
         f = facts(s.plan)
         out['sheets'][s.id] = {'gross': f['gross'], 'internal': f['internal'],
-                              'rooms': f['rooms'], 'zones': f['zones'], 'openings': f['openings'],
+                              'rooms': [dict((k, v) for k, v in r.items() if k != 'clear') for r in f['rooms']],
+                              'zones': f['zones'], 'openings': f['openings'],
                               'issues': [i for i in f['issues'] if i['level'] != 'info']}
     return out
 

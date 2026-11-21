@@ -76,16 +76,17 @@ KNOWN = {
     'top': ('house', 'defaults', 'survey', 'lines', 'parts', 'levels', 'sheets', 'outline', 'connections'),
     'house': ('name', 'front', 'front_note', 'private', 'north', 'units'),
     'outline': ('sheets', 'notes'),
-    'sheet': ('id', 'title', 'tab', 'level', 'scheme', 'changes', 'extends', 'hidden', 'demolition', 'unlabelled',
+    'sheet': ('id', 'title', 'tab', 'level', 'scheme', 'changes', 'extends', 'hidden', 'demolition', 'unlabelled', 'shows',
               'require', 'envelope', 'use', 'omit', 'notes', 'underlay', 'walls', 'dividers', 'openings', 'rooms',
               'stairs', 'areas', 'solids', 'fittings', 'rooflights', 'labels', 'gone', 'dims', 'zones'),
     'walls': ('id', 'from', 'to', 't', 'butt', 'path') + _CURVE,
     'envelope': ('at', 't', 'id', 'open') + _CURVE,
     'openings': ('door', 'window', 'opening', 'pair', 'at', 'wall', 'hinge', 'swing', 'face', 'style', 'id'),
-    'rooms': ('name', 'id', 'expect', 'at', 'sub', 'rot', 'size', 'dims', 'zone', 'label', 'dx', 'dy'),
+    'rooms': ('name', 'id', 'expect', 'at', 'sub', 'rot', 'size', 'dims', 'zone', 'label', 'dx', 'dy', 'level'),
     'fittings': tuple(KINDS) + ('id', 'depth', 'wall', 'at', 'side', 'facing', 'corner', 'flip', 'label', 'bowls',
                                 'drainer', 'hearth', 'opening'),
-    'stairs': ('id', 'path', 'width', 'treads', 'going', 'riser', 'turns', 'cut_risers', 'show', 'label', 'ref'),
+    'stairs': ('id', 'path', 'width', 'treads', 'going', 'riser', 'turns', 'cut_risers', 'show', 'label', 'ref',
+               'from', 'to'),
     'areas': ('id', 'points', 'rect', 'style', 'label', 'sub', 'rot'),
     'labels': ('at', 'text', 'rot', 'style'),
     'dims': ('from', 'to', 'text', 'style'),
@@ -413,6 +414,26 @@ class Loader(object):
                                   'a fitting or an area by its `id`, or a room by its name' % (ww, name))
         return f
 
+    def floors(self, heights):
+        """Where each level's floor is, from the datum: as a level gives it
+        (`floor:`), or stepped up from the level below it by that level's
+        height. A level neither gives nor reaches is left out: its stairs
+        take their riser from the storey's height, as they always have."""
+        out = {}
+        for i, lv in enumerate(self.levels):
+            h = heights.get(lv) or {}
+            if h.get('floor') is not None:
+                out[lv] = h['floor']
+            elif i == 0 and not any((heights.get(x) or {}).get('floor') is not None for x in self.levels):
+                out[lv] = 0.0                       # nothing given: the lowest level is the datum
+            elif i > 0 and self.levels[i-1] in out and (heights.get(self.levels[i-1]) or {}).get('height'):
+                out[lv] = out[self.levels[i-1]] + heights[self.levels[i-1]]['height']
+        for a, b in zip(self.levels, self.levels[1:]):
+            if a in out and b in out and out[b] < out[a] - 1e-9:
+                raise ConfigError('levels: %s is listed above %s, and its floor is lower (%g, %g): list them bottom up'
+                                  % (b, a, out[b], out[a]))
+        return out
+
     # -- the sheets
     def house(self):
         h = self.raw.get('house') or {}
@@ -443,16 +464,21 @@ class Loader(object):
             raise ConfigError('levels: a list of the storeys, bottom up')
         self.levels, heights = [], {}
         for i, v in enumerate(levels):
-            # a level may say how high it is, floor to the floor above, and how deep its own floor is
+            # a level may say how high it is, floor to the floor above, and how deep its own floor is;
+            # and where its floor is, above or below a datum every level is measured from
             if isinstance(v, dict):
                 w = 'levels[%d]' % i
-                if set(v) - set(('id', 'height', 'floor_depth')):
-                    raise ConfigError('%s: a level is its id, or {id:, height:, floor_depth:}' % w)
+                if set(v) - set(('id', 'height', 'floor_depth', 'floor')):
+                    raise ConfigError('%s: a level is its id, or {id:, floor:, height:, floor_depth:}' % w)
                 heights[str(_need(v, 'id', w))] = dict(
                     (k, None if v.get(k) is None else self.some(v[k], '%s.%s' % (w, k), 'a height'))
                     for k in ('height', 'floor_depth'))
+                heights[str(v['id'])]['floor'] = None if v.get('floor') is None else self.num(v['floor'], w + '.floor')
                 v = v['id']
+            if str(v) in self.levels and self.raw.get('levels'):
+                raise ConfigError('levels[%d]: %r is listed twice' % (i, str(v)))
             self.levels.append(str(v))
+        floors = self.floors(heights)
         out = {'name': str(h.get('name') or stem(self.path)),
                'front': h.get('front'), 'front_note': None if h.get('front_note') is None else str(h['front_note']),
                'private': bool(h.get('private', False)), 'units': h.get('units', 'metric'),
@@ -460,12 +486,20 @@ class Loader(object):
                'defaults': self.defaults, 'names': dict(self.scope.names),
                'status': dict(self.status), 'written': dict(self.written), 'scope': self.scope, 'sheets': [],
                'levels': self.levels, 'outline': self.raw.get('outline') or {},
-               'heights': dict((lv, heights.get(lv, {'height': None, 'floor_depth': None})) for lv in self.levels),
+               'heights': dict((lv, dict({'height': None, 'floor_depth': None}, **dict(heights.get(lv, {}), floor=floors.get(lv))))
+                               for lv in self.levels),
+               'floors': floors,
                'connections': self.connections(self.raw.get('connections')), 'unknown': self.unknown}
         if not isinstance(out['outline'], dict):
             raise ConfigError('outline: a mapping — `sheets:` to say which, and `notes:`')
         seen, self.flat = {}, {}                    # the sheets read; each as written out whole, for one that extends it
+        out['sets'] = []
         for f in sheets:
+            if 'shows' in f:                        # several sheets drawn side by side on one
+                out['sets'].append(self.shows(f, len(out['sheets'])))
+                if out['sets'][-1]['id'] in seen or [s for s in out['sets'][:-1] if s['id'] == out['sets'][-1]['id']]:
+                    raise ConfigError('sheets: two sheets called %r' % out['sets'][-1]['id'])
+                continue
             try:
                 fl = self.sheet(f, seen)
             except ConfigError:
@@ -477,12 +511,40 @@ class Loader(object):
                 raise ConfigError('sheets: two sheets called %r' % fl['id'])
             seen[fl['id']] = fl
             out['sheets'].append(fl)
-        if all(fl['hidden'] for fl in out['sheets']):
+        for st in out['sets']:
+            lost = [i for i in st['shows'] if i not in seen]
+            if lost or len(st['shows']) < 2:
+                raise ConfigError('sheets.%s.shows: two or more plan sheets by their id (have %s)'
+                                  % (st['id'], ', '.join(seen)))
+            if st['id'] in seen:
+                raise ConfigError('sheets: two sheets called %r' % st['id'])
+        if all(fl['hidden'] for fl in out['sheets'] + out['sets']):
             raise ConfigError('sheets: every sheet is `hidden: true` — a house shows at least one')
         named = out['outline'].get('sheets') or []
         if not isinstance(named, list) or [i for i in named if str(i) not in seen]:
             raise ConfigError('outline.sheets: list sheets by their id (have %s)' % ', '.join(seen))
         return out
+
+    def shows(self, f, at):
+        """A sheet that is other sheets set side by side: the ground floor
+        beside the first, as a sales plan has them. It draws nothing of its
+        own; each sheet it shows keeps its own tab, and hiding those leaves
+        this one — showing them again splits it back."""
+        fid = str(_need(f, 'id', 'sheet'))
+        if not NAME.match(fid):
+            raise ConfigError('sheets: id %r — use letters, digits, - and _ only' % fid)
+        w = 'sheets.%s' % fid
+        extra = set(f) - set(('id', 'title', 'tab', 'hidden', 'shows', 'notes'))
+        if extra:
+            raise ConfigError('%s: a sheet that `shows` others takes title, tab, hidden and notes, not %s'
+                              % (w, ', '.join(sorted(extra))))
+        ids = f['shows']
+        if not isinstance(ids, list):
+            raise ConfigError('%s.shows: a list of sheet ids' % w)
+        name = fid.replace('-', ' ')
+        return {'id': fid, 'title': str(f.get('title', name.upper())), 'tab': str(f.get('tab', name.title())),
+                'hidden': self.flag(f.get('hidden', False), w + '.hidden'), 'shows': [str(i) for i in ids],
+                'notes': f.get('notes') or notes(None, w), 'at': at, 'where': w}
 
     def connections(self, v):
         """What the drawing the house came from shows leading where, read
@@ -607,7 +669,15 @@ class Loader(object):
                                 'label': self.label(x.get('label', True), ww), 'where': ww})
         for i, x in enumerate(f.get('stairs') or []):
             fl['stairs'].append(self.stair(x, '%s.stairs[%d]' % (w, i), earlier))
-            fl['stairs'][-1].setdefault('level', level)       # the storey it climbs from
+            st = fl['stairs'][-1]
+            st.setdefault('level', st.get('from') or level)       # the storey it climbs from
+            if st.get('leveled') and st.get('ref') is None:
+                st['from'] = st['from'] or level
+                if st['to'] is None:
+                    up = self.levels.index(st['from']) + 1
+                    if up >= len(self.levels):
+                        raise ConfigError('%s: the stair climbs from %s, the top level: say `to:`' % (st['where'], st['from']))
+                    st['to'] = self.levels[up]
         for i, x in enumerate(f.get('areas') or []):
             ww = '%s.areas[%d]' % (w, i)
             if x.get('style', 'below') not in AREA_STYLES:
@@ -641,6 +711,8 @@ class Loader(object):
             if fl['dims'][-1]['style'] not in DIM_STYLES:
                 raise ConfigError('%s.style: no dimension style %r (have soft, calc)' % (ww, x['style']))
         fl['notes'] = f.get('notes') or notes(None, w)          # filled in once rooms are measured
+        # the levels the sheet holds: its own, and any a room on it is on
+        fl['levels'] = [lv for lv in self.levels if lv == level or any(r['level'] == lv for r in fl['rooms'])]
         self.flat[fid] = dict(f, level=level)
         return fl
 
@@ -833,7 +905,16 @@ class Loader(object):
                 'dims': x.get('dims', True), 'zone': bool(x.get('zone', False)),
                 'label': self.label(x.get('label', True), where),
                 'dx': self.num(x.get('dx', 0), where + '.dx'),
-                'dy': self.num(x.get('dy', 0), where + '.dy'), 'where': where}
+                'dy': self.num(x.get('dy', 0), where + '.dy'), 'where': where,
+                'level': self.level_of(x.get('level'), where)}
+
+    def level_of(self, v, where):
+        """A level named on a room or a stair: one of `levels`, or None."""
+        if v is None:
+            return None
+        if str(v) not in self.levels:
+            raise ConfigError('%s.level: no level called %r (have %s)' % (where, str(v), ', '.join(self.levels)))
+        return str(v)
 
     def flag(self, v, where):
         if not isinstance(v, bool):
@@ -876,16 +957,32 @@ class Loader(object):
         turns = x.get('turns', ['landing']*(legs-1))
         if len(turns) != legs - 1:
             raise ConfigError('%s.turns: one per corner (%d)' % (where, legs-1))
-        tn, reach = [], []
+        tn, reach, landings = [], [], []
         for t in turns:
             if t == 'landing':
                 tn.append(0)
                 reach.append(False)
+                landings.append(None)
+            elif isinstance(t, dict) and set(t) == set(['landing']):
+                tn.append(0)                        # a landing that is a level's floor: the flights either side climb to it
+                reach.append(False)
+                lv = str(t['landing'])
+                if lv not in self.levels:
+                    raise ConfigError('%s.turns: {landing: %s} — no level called %r (have %s)'
+                                      % (where, lv, lv, ', '.join(self.levels)))
+                landings.append(lv)
             elif isinstance(t, dict) and 'winders' in t:
                 tn.append(int(self.num(t['winders'], where + '.turns')))
                 reach.append(bool(t.get('reach')))
+                landings.append(None)
             else:
-                raise ConfigError('%s.turns: use landing or {winders: n}' % where)
+                raise ConfigError('%s.turns: use landing, {landing: a level} or {winders: n}' % where)
+        ends = []
+        for k in ('from', 'to'):
+            v = x.get(k)
+            if v is not None and str(v) not in self.levels:
+                raise ConfigError('%s.%s: no level called %r (have %s)' % (where, k, str(v), ', '.join(self.levels)))
+            ends.append(None if v is None else str(v))
         going = self.num(x.get('going', self.defaults['going']), where + '.going')
         if going <= 0:
             raise ConfigError('%s.going: a tread is some way deep, not %g' % (where, going))
@@ -904,7 +1001,9 @@ class Loader(object):
                 'width': width, 'treads': treads,
                 'going': going, 'riser': riser,
                 'turns': tn, 'reach': reach, 'cut': None if cut is None else self.num(cut, where + '.cut_risers'),
-                'show': show, 'label': x.get('label', 'UP'), 'where': where}
+                'show': show, 'label': x.get('label', 'UP'), 'where': where,
+                'from': ends[0], 'to': ends[1], 'landings': landings,
+                'leveled': ends[1] is not None or any(landings)}
 
 
 MOST = 400000                # values in a house file, counting one that is repeated each time it is

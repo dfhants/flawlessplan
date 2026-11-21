@@ -45,6 +45,7 @@ STYLE = """
 .rail{fill:none;stroke:INK;stroke-width:5;stroke-linejoin:miter}
 .edge{fill:none;stroke:SOFT;stroke-width:4}
 .stairline{stroke:SOFT;stroke-width:3}
+.step{stroke:INK;stroke-width:4;fill:none}
 .arrow{fill:none;stroke:SOFT;stroke-width:5}
 .arrowhead{fill:SOFT}
 .compass{fill:none;stroke:SOFT;stroke-width:4}
@@ -169,6 +170,11 @@ def draw(sheet):
     for z in plan.zones:                            # each one's outline, a little inside the wall faces
         sh.out('<path d="%s" class="zone"/>' % geom_path(z['face'].buffer(-ZONE_IN, join_style=2)))
 
+    for st in getattr(sheet, 'steps', None) or []:      # where the floor steps up or down between two rooms
+        for part in getattr(st['line'], 'geoms', [st['line']]):
+            if part.geom_type == 'LineString':
+                sh.out('<path d="%s" class="step"/>' % path(list(part.coords), close=False))
+
     for g in sheet.stairs:
         if g['void'] is not None:                   # the well the rest of the flight is in: not floor
             sh.out('<path d="%s" class="well"/>' % geom_path(g['void']))
@@ -176,16 +182,17 @@ def draw(sheet):
             sh.out('<path d="%s" class="stair"/>' % path(p))
         for a, b in g['lines']:
             sh.line(a, b, 'stairline')
-        if len(g['walk']) >= 2:
-            sh.out('<path d="%s" class="arrow"/>' % path(g['walk'], close=False))
-        if g['head']:
-            (tx, ty), (dx, dy) = g['head']
-            base = (tx - dx*0.18, ty - dy*0.18)
-            pts = [(tx, ty), (base[0] - dy*0.09, base[1] + dx*0.09),
-                   (base[0] + dy*0.09, base[1] - dx*0.09)]
-            sh.out('<path d="%s" class="arrowhead"/>' % path(pts))
-        if g['label'][1]:
-            sh.text(g['label'][0], g['label'][1], 'rmarea sm')
+        for walk, head, label in g.get('arrows') or [(g['walk'], g['head'], g['label'])]:
+            if len(walk) >= 2:
+                sh.out('<path d="%s" class="arrow"/>' % path(walk, close=False))
+            if head:
+                (tx, ty), (dx, dy) = head
+                base = (tx - dx*0.18, ty - dy*0.18)
+                pts = [(tx, ty), (base[0] - dy*0.09, base[1] + dx*0.09),
+                       (base[0] + dy*0.09, base[1] - dx*0.09)]
+                sh.out('<path d="%s" class="arrowhead"/>' % path(pts))
+            if label[1]:
+                sh.text(label[0], label[1], 'rmarea sm')
         for pts in g['rail']:                       # the balustrade, over the stair's own edge
             sh.out('<path d="%s" class="rail"/>' % path(pts, close=False))
 

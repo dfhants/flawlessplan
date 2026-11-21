@@ -181,10 +181,16 @@ size is a name for notes. Like fittings they are in the report and in what
 an edit says it changed, not in a snapshot. Never fake one as an `areas`
 entry of style `zone`.
 
-**Split levels** are levels: half-levels are listed in `levels` and drawn
-a sheet each. `open: true` on an envelope point makes the wall leaving it
-no wall — the floor's edge, drawn thin — which is where a half-level meets
-the one beside it or a gallery looks down.
+**Split levels** are levels: half-levels are listed in `levels`, each
+with its `floor:` above a datum (`model.floors`, which also steps floors
+up by storey heights). A sheet holds its own level and any its rooms name
+with `level:` (`spec['levels']`); a divider between rooms on two levels is
+a step (`Sheet.steps`), drawn, and not walked across. `open: true` on an
+envelope point makes the wall leaving it no wall — the floor's edge, drawn
+thin — for the older way, a sheet per half-level. `solve.stacked` gives
+each room the clear height under what stands over it on the other sheets
+of the same house (`_over`: same scheme, else as built) and says a room
+or a flight with too little.
 
 **Connections** are read off the plan, never written: `Plan.links` is
 each opening with the rooms either side of it (`room_at`, OUTSIDE past the
@@ -228,6 +234,18 @@ in `labels.py`) were measured off a render; remeasure if a font or size
 changes. `dx`/`dy` on a room moves its label by hand. `label: west` (or any
 side) sets it in the margin on that side with a line to the room, for a
 room too small or too busy to carry it; `label: false` leaves it off.
+
+**Stairs that join levels** say `from:`/`to:`, and `{landing: lv}` in
+`turns` for a landing that is a level's floor (`st['leveled']`).
+`stairs.flights` splits the stair there and gives every unit a height;
+`stairs.leveled` draws what one sheet holds of it — a flight between two
+of its levels whole, one leaving it up to `CUT` and the zigzag, one
+arriving the rest with its well (or, with the floor's depth known, open
+as far as headroom), a flight passing under it too close as well — any
+number of cuts on one stair (`_draw`). Its `arrows` and its `ends` (where
+it is stepped on and off, for `Plan.reach`) come with it, and a landing
+that is the sheet's level is floor. `cut_risers`, `show:` and the single
+cut below are the older way and are untouched.
 
 **Stairs** A stair is a walking line with a width: each leg a flight, each
 corner a landing or winders. Counting along it every tread is one riser, a
@@ -364,6 +382,11 @@ that stays on the page, where the owner confirms it, and is refused while
 stair by `ref`. The text is changed in place — a sheet's remarks go with
 it — and read back as YAML before it is written; where sheets are not a
 list of blocks the change is refused and left to be made by hand.
+
+A sheet that `shows: [ground, first]` is `solve.Combined`: those sheets'
+drawings side by side, nothing worked out again, no plan of its own (like
+the outline). The sheets it shows keep their tabs; hiding them is how it
+stands alone, and it is refused binning one it shows.
 
 A hidden sheet (`Sheet.hidden`) is not in `Solved.shown()`, which is what
 the page's tabs, the file that is sent, the index and the outline read. It

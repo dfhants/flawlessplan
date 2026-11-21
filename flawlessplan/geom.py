@@ -735,6 +735,9 @@ class Plan(object):
         taken += [Polygon(a['pts']) for a in self.spec['areas'] if a['style'] == 'fitting']
         if taken or steps:
             floor = floor.difference(unary_union([t.buffer(0) for t in taken] + steps))
+        landings = [g['landing'] for _, g in flights if g.get('landing') is not None]
+        if landings:                                # a landing that is this floor's level is stood on
+            floor = unary_union([floor] + landings)
         half = PASS/2.0
         cores = [c for c in _polys(floor.buffer(-half, join_style=2)) if c.area > 1e-4]
         near = half + GRIP

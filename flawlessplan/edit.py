@@ -369,6 +369,7 @@ def bin_sheet(path, sheet, given=None, ws=None):
     held = ['%s (%s)' % (sid, why if why.startswith('a ') else '`%s:`' % why)
             for sid in ids for other, why in need.get(sid, []) if other == str(sheet)]
     held += ['the outline sheet (`outline.sheets`)'] if str(sheet) in outlined else []
+    held += ['%s (`shows:`)' % str(f['id']) for f in listed if str(sheet) in [str(i) for i in (f.get('shows') or [])]]
     if held:
         raise Refused('not changed — %s cannot be binned while %s depend%s on it'
                       % (sheet, ', '.join(held), 's' if len(held) == 1 else ''))

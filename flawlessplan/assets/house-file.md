@@ -56,7 +56,11 @@ is reported, never passed over.
 
 `levels:` lists the storeys bottom up, each an id or `{id: ground,
 height: 2.6, floor_depth: 0.25}`: floor to the floor above, and how deep
-that level's own floor is. A stair takes its riser from the height of the
+that level's own floor is. A level may instead give `floor: 1.35`, how
+far its floor is above a datum (any level; below it is negative) — the
+plain way to give half-levels, whose heights interleave. Where no level
+gives a floor the lowest is at 0 and each above it is stepped up by the
+height of the one below, as far as heights are given. A stair takes its riser from the height of the
 storey it climbs, or from its own `riser:`, and its going from its
 treads; its pitch and twice the riser plus the going are in the report,
 and a pitch over 42° or 2R+G outside 550–700 mm is reported — an older
@@ -177,15 +181,38 @@ diameter. A `fireplace:` is its chimney breast, as wide as its value and
 and so is a door that cannot open to 90° without hitting one, or another
 door.
 
-A house on split levels is drawn a level at a time, like any other: list
-the half-levels in `levels:`, bottom up, and give each its own sheet.
-Where a level's floor ends at a drop or a rise and not at a wall, the
-envelope says `open: true` on the point that edge leaves; the flight
-between is a stair with `cut_risers` on the lower sheet and a `ref` on the
-upper, and an `areas` of style `below` shows the other level beside it.
-A step or two inside one level is a stair with no `cut_risers`, drawn
-whole, and a `dividers` line where the floor steps makes the two sides
-separate rooms.
+A house on split levels keeps one sheet to a floor, as a sales plan
+draws it. List every level, half-levels too, in `levels:` with its
+`floor:`. A room on another level than its sheet says so with `level:`:
+its label gives its floor (`+1.35 m`), and where it is open to a room on
+the sheet's own level across a `dividers` line, the line is drawn as the
+step. A stair that joins levels says so with `from:` (its sheet's level
+if left out) and `to:`, and a landing that is a level's floor — the half
+landing a kitchen door opens onto — is `{landing: kitchen-half}` in
+`turns`. Each flight between two levels takes its riser from their floors
+over its risers, and is checked against Approved Document K. Each sheet
+then draws what it holds of the stair: a flight between two of its own
+levels whole; one that leaves for a level on another sheet up to 1.0 m
+over its floor, then the zigzag; one that arrives from another sheet the
+rest of the way, with the well; and, where a floor's depth is known, any
+flight passing under it too close for headroom as part of the well. No
+`cut_risers` and no `show:`: the sheet above shows the stair with `{ref:
+ground.main}` and works out the rest.
+
+Where one level stands over another the clear height between is worked
+out, room by room and flight by flight: the report gives each room's
+`clear` and what is over it, and less than 2.0 m over a room, or less than
+2.0 m headroom over a flight outside the well cut for it, is said.
+
+The older way still works: a sheet per half-level, the floor's edge
+`open: true` on the envelope point it leaves, a stair with `cut_risers`
+on the lower sheet and a `ref` on the upper.
+
+Several floors can be drawn side by side on one sheet, as a brochure
+does: `- {id: both, title: GROUND AND FIRST, shows: [ground, first]}` in
+`sheets:` (it takes `title`, `tab`, `hidden` and `notes`, nothing else).
+Each sheet it shows keeps its own tab; hide them to leave the combined
+one, show them again to split it back.
 
 The order of `sheets:` is the order of the tabs, of the file that is sent
 and of everything the tools list.
@@ -237,10 +264,10 @@ things share a name. An `omit` that names nothing on the sheet is an error.
 | `envelope` | Outer faces in order. A point may be `{at: [x, y], t: 0.25, id: south}` — thickness and name of the wall leaving it, `rise:`, `radius:` or `via:` if it curves, and `open: true` where the floor ends and no wall stands. |
 | `walls` | `from`/`to` on the centreline, optional `t`, `id`; `rise:` or `radius:` with `toward:`, or `via:`, for a curve. `path:` for a run of several: its legs are `id.0`, `id.1` … in order, and an opening names the leg it is in (`wall: id.1`) — or the path itself, with `at:` a point, and finds its leg. |
 | `openings` | `door:` (a leaf — `cloak`, `std`, `wide` — or a width), `window:` or `opening:` a width. `at:` is `centre`, a point, `{from_start: d}` or `{from_end: d}`. `hinge:` and `swing:` take compass points, `start`/`end`, `left`/`right`, `in`/`out`. `face:` (the same words as `swing:`) hangs the leaf on that face of the wall instead of the one it opens to. `pair: true`; `style:` `fold`, `slide`, `frame`, `none`, or for a garage `up` (up-and-over: the panel drawn overhead as it stands open) or `roller` (its box drawn inside); `swing:` says which side is in. |
-| `rooms` | `name`, `at`; optional `sub` (footnote, may use `{area}`, `{w}`, `{h}`), `size: small`, `rot`, `dims: false`, `dx`/`dy`, `id`. `expect: {w: sit_w, h: sit_d}` (any of `w` east–west, `h` north–south, `area`) is the size the room was given: a room that does not read it, within 50 mm, is reported. `zone: true` draws the room as a dashed outline with its area — there, but not laid out. `label:` a side (`west`, `east`, `north`, `south`) sets the label in that margin with a line to the room; `false` leaves it off. |
+| `rooms` | `name`, `at`; optional `sub` (footnote, may use `{area}`, `{w}`, `{h}`), `size: small`, `rot`, `dims: false`, `dx`/`dy`, `id`, `level` when it is on another level than its sheet. `expect: {w: sit_w, h: sit_d}` (any of `w` east–west, `h` north–south, `area`) is the size the room was given: a room that does not read it, within 50 mm, is reported. `zone: true` draws the room as a dashed outline with its area — there, but not laid out. `label:` a side (`west`, `east`, `north`, `south`) sets the label in that margin with a line to the room; `false` leaves it off. |
 | `zones` | Rooms marked out together as one region: `{name: PHASE 2, rooms: [HALL, WC], sub: ..., label: west}`. Outlined as one, measured, and the rooms stay as drawn. |
 | `dividers` | Undrawn lines that split one open space into two rooms. |
-| `stairs` | `path` foot to head, `width`, `treads` per leg, `riser` if it is not the storey's height over its risers, `turns` (`landing` or `{winders: n}`; `reach: true` makes the lowest winder take in a level run before it), `cut_risers`, `show: below/above/all`. The level above reuses one with `{ref: ground.main, show: above}`; there its arrow runs head to foot and it says DN. |
+| `stairs` | `path` foot to head, `width`, `treads` per leg, `riser` if it is not the storey's height over its risers, `turns` (`landing`, `{landing: a level}` for one that is that level's floor, or `{winders: n}`; `reach: true` makes the lowest winder take in a level run before it), `from`/`to` for the levels it joins, or else `cut_risers` and `show: below/above/all`. The level above reuses one with `{ref: ground.main}` (and `show: above` for one without `to:`); there its arrow runs head to foot and it says DN. |
 | `fittings` | What is built in: `bath`, `shower`, `wc`, `basin`, `sink`, `hob`, `oven`, `worktop`, `boiler`, `cylinder`, `wardrobe`, `fireplace`, `unit` — see above. |
 | `rooflights` | Lights in the ceiling over this sheet's floor: `{at: [x, y], w: 0.8, h: 1.0}` — its middle, and how far it runs east–west and north–south — with `id`, `label` (written under it) and `rot` if wanted. Drawn dashed with a cross, as what is overhead is; room labels keep off it. With an `id`, notes may use `{id_w}`, `{id_h}` and `{id_area}`. One that is not over the building is reported. |
 | `areas` | Shapes with a `style` saying what they are: `outdoor` (roofed or paved, outside the walls), `below` (a lower roof seen from above), `fitting` (a built-in shape that is none of the `fittings`; labels keep off), and `zone` and `new` for a region or a gain the engine cannot derive. |
