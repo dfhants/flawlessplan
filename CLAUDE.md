@@ -190,8 +190,13 @@ the one beside it or a gallery looks down.
 each opening with the rooms either side of it (`room_at`, OUTSIDE past the
 envelope, a nameless room for a space with none), the one its leaf swings
 into and the side it is hung; a window its room and the way it looks.
-`Plan._reach` walks the doors from outside, or on an upper floor from the
-head of a stair, and reports each room it never comes to. `connections:`
+`Plan.reach`, called once a sheet's stairs are built, walks twice from
+outside, or on an upper floor from the head of a stair: by doors and open
+sides, reporting each room it never comes to; then over the floor itself,
+with the stairs, their wells and the fittings taken out and anything
+narrower than `PASS` (0.5 m) left out. A door that opens onto less than
+that is said, and a room the doors reach but the floor does not is said
+with where the way narrows (`Plan._pinch`). `connections:`
 in the house file is what the source drawing shows, held to the sheets
 that change nothing by `solve.connected`.
 

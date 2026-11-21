@@ -385,3 +385,23 @@ def test_units_both_gives_square_feet_beside_square_metres():
     assert any('sq ft) gross' in l for l in sh.lines)
     with pytest.raises(model.ConfigError, match='house.units'):
         solve.solves((ROOMS % ('', '')).replace('survey:', 'house: {units: feet}\nsurvey:', 1))
+
+
+def test_a_room_behind_a_strip_nobody_fits_along_is_reported():
+    """B is entered from outside at its south end; a counter across it
+    leaves 0.25 m beside the wall to A, so A's door leads nowhere."""
+    block = '    areas:\n      - {rect: [[4.3, 2.0], [8, 2.6]], style: fitting}\n'
+    got = said(house(more=block))
+    assert any(m.startswith('sheets.ground.rooms[0]: A cannot be walked to from the front door')
+               and 'narrows to about 0.25 m near (4.30, 2.30)' in m for m in got), got
+    assert not any('rooms[1]' in m for m in got)
+    got = said(house(more=block.replace('4.3', '4.7')))           # 0.65 m: a way through
+    assert not any('walked to' in m for m in got), got
+
+
+def test_a_door_onto_a_stair_leads_nowhere():
+    """A stair drawn whole from the door's very threshold: the door opens
+    onto its treads, with no floor to stand on."""
+    stair = '    stairs:\n      - {id: s, path: [[4.55, 0.1], [4.55, 3.2]], width: 0.9}\n'
+    got = said(house(more=stair))
+    assert any('openings[0]: the door in wall split opens onto less than 0.5 m clear in B' in m for m in got), got

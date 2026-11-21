@@ -86,6 +86,7 @@ class Sheet(object):
         self.stairs = [self._flight(st) for st in fl['stairs']]
         for g in self.stairs:
             g['void'], g['rail'] = stairs.well(g, plan.solid)
+        plan.reach(list(zip(fl['stairs'], self.stairs)))
         for r in plan.rooms + plan.zones:
             r['units'] = house.get('units', 'metric')
         self.labels = self._place()

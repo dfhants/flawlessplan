@@ -265,7 +265,10 @@ default every sheet whose outline differs) and its `notes:`.
 ## What gets checked
 
 Every build reports: a room no door reaches from the front door, or on an
-upper floor from the stair — cupboards too; what `connections` expects and
+upper floor from the stair — cupboards too; a room the doors reach but
+nobody can walk to, because the only way is narrower than 0.5 m past a
+stair, its well or a fitting, with where it narrows; a door that opens
+onto less than that; what `connections` expects and
 the plan does not have; a door that swings into a fitting or another door;
 a stair steeper than 42° or outside 2R+G 550–700 mm; a key nothing reads;
 an opening that runs off its wall or overlaps another;

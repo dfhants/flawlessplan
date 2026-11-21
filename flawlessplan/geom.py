@@ -23,6 +23,9 @@ AREA_NEAR = 0.5          # m²
 OPEN = 60.0              # leaves are drawn 60 degrees open
 PROBE = 0.08             # how far past a wall's face a room is looked for, either side of an opening
 SWING_TOL = 0.002        # m² of a fitting a door may sweep before it is said to hit it
+PASS = 0.5               # the narrowest a person can get along, in metres
+STEP_OFF = 0.05          # how far past the end of a flight its floor is looked for
+GRIP = 0.05              # how far past where a person can stand a doorway or a step may be and still be reached
 COMPASS = {'n': (0.0, -1.0), 's': (0.0, 1.0), 'e': (1.0, 0.0), 'w': (-1.0, 0.0)}
 
 
@@ -196,6 +199,17 @@ class Host(object):
         return LineString(self.run(s0, s1)).buffer(self.t/2.0 + TOL, cap_style=2, join_style=2)
 
 
+def _walk(graph, starts):
+    """Everything reached from `starts` over `graph`."""
+    seen, todo = set(starts), list(starts)
+    while todo:
+        for nxt in graph.get(todo.pop(), ()):
+            if nxt not in seen:
+                seen.add(nxt)
+                todo.append(nxt)
+    return seen
+
+
 class Plan(object):
     def __init__(self, spec, house):
         self.spec, self.house = spec, house       # spec: the sheet as the house file gives it
@@ -214,7 +228,6 @@ class Plan(object):
             self._fittings()
         self._swings()
         self._links()
-        self._reach()
         self._rooflights()
         for e in spec.get('sources', []):          # drawn as the source drew it, and known not to be so
             if e['source'] == 'as-drawn-wrong':
@@ -603,11 +616,19 @@ class Plan(object):
         is not glazed or a fixed light."""
         return [k for k in self.links if k['kind'] != 'window' and k['style'] != 'frame']
 
-    def _reach(self):
-        """Every room should be reached from the front door by doors, or
-        on an upper floor from the stair. A room nothing leads to is
-        reported; so is a cupboard, which needs a door like any room."""
-        graph = {}
+    def reach(self, flights=()):
+        """Every room should be reached from the front door, or on an upper
+        floor from the stair, by a way a person can walk. Two walks are
+        made. By doors alone, as the plan's rooms join: a room none leads
+        to is reported, a cupboard too. Then over the floor itself, with
+        the stairs, their wells and what is built in taken out and any
+        passage narrower than PASS left out: a room the doors reach that
+        this walk does not is behind a strip nobody fits along, and the
+        door that opens onto one is said. `flights` is each stair on the
+        sheet as (stair, what stairs.build made of it)."""
+        level = self.spec['level']
+        on = lambda r: r.get('level') or level
+        graph, ends, starts = {}, [], set()
 
         def join(a, b):
             if a is not None and b is not None and a is not b:
@@ -616,36 +637,175 @@ class Plan(object):
         for k in self.passages():
             join(*k['rooms'])
         for s in self.open_sides:
-            join(*s['rooms'])
-        start = set([id(OUTSIDE)]) if id(OUTSIDE) in graph else set()
-        for st in self.spec['stairs']:
-            if st.get('ref') is not None:               # it arrives here: the room at its head
-                (ax, ay), (bx, by) = st['path'][-2], st['path'][-1]
-                d, L = _unit((ax, ay), (bx, by))
-                r = self.room_at(_add((bx, by), d, PROBE))
-                if r is None or r is OUTSIDE:
-                    r = self.room_at(_add((bx, by), d, -PROBE))
-                if r not in (None, OUTSIDE):
-                    start.add(id(r))
-        for h in self.env_hosts:                        # a half-level's open edge is walked across
+            if on(s['rooms'][0]) == on(s['rooms'][1]):  # open to each other, and the floor runs on: no step
+                join(*s['rooms'])
+        for st, g in flights:
+            for a, b, kind in self._stair_ends(st, g):
+                ends.append((a, b, kind))
+                ra = self.room_at(a.centroid.coords[0])
+                if kind == 'arrive':
+                    if ra not in (None, OUTSIDE):
+                        starts.add(id(ra))
+                elif kind == 'both':
+                    join(ra, self.room_at(b.centroid.coords[0]))
+        if id(OUTSIDE) in graph:
+            starts.add(id(OUTSIDE))
+        for p in self._open_edge():                 # a half-level's open edge is walked across
+            r = self.room_at(p)
+            if r not in (None, OUTSIDE):
+                starts.add(id(r))
+        if not starts:
+            return
+        seen = _walk(graph, starts)
+        whence = 'the front door' if id(OUTSIDE) in starts else 'the stair'
+        missed = [r for r in self.rooms if id(r) not in seen]
+        for r in missed:
+            self.warn('%s: no door leads to %s from %s' % (r['where'], r['name'], whence))
+        self._walkable(flights, ends, set(id(r) for r in missed), whence)
+
+    def _stair_ends(self, st, g):
+        """Where a stair is stepped on and off on this sheet: (line across
+        it, line across its other end, kind) — `both` for a flight drawn
+        whole, which joins the floor at its foot to the floor at its head;
+        `arrive` for one that comes up from the level below, stepped off
+        at its head; `leave` for one that goes on to another sheet,
+        stepped onto at its foot."""
+        if g.get('ends') is not None:               # worked out from the levels the stair joins
+            return g['ends']
+        P, W = st['path'], st['width']
+        d0, d1 = _unit(P[0], P[1])[0], _unit(P[-2], P[-1])[0]
+
+        def across(p, d, w):
+            n = (-d[1]*w/2.0, d[0]*w/2.0)
+            return LineString([_add(p, n), _add(p, n, -1)])
+        foot, head = across(_add(P[0], d0, -STEP_OFF), d0, W[0]), across(_add(P[-1], d1, STEP_OFF), d1, W[-1])
+        if st.get('ref') is not None:
+            return [(head, None, 'arrive')] if st['show'] != 'below' else [(foot, None, 'leave')]
+        if st['show'] == 'all':
+            return [(foot, head, 'both')]
+        return [(foot, None, 'leave')]
+
+    @staticmethod
+    def _pinch(r, cores, seen, graph, floor):
+        """Where the way to a room nobody can walk to is narrowest: between
+        the floor that is reached and the floor the room's doors lead on
+        to, where they come nearest without a wall between. Said as a
+        place on the plan, to look at."""
+        from shapely.ops import nearest_points
+        theirs = _walk(graph, set(('piece', i) for i, c in enumerate(cores) if c.intersects(r['face'])))
+        mine = [c for i, c in enumerate(cores) if ('piece', i) in theirs]
+        got = [c for i, c in enumerate(cores) if ('piece', i) in seen]
+        room = floor.buffer(0.01)
+        best = None
+        for a in mine:
+            for b in got:
+                p, q = nearest_points(a, b)
+                d = p.distance(q)
+                if (best is None or d < best[0]) and room.contains(LineString([p, q]) if d > 1e-9 else p):
+                    best = (d, p, q)
+        if best is None:
+            return ''
+        d, p, q = best
+        m = Point((p.x + q.x)/2.0, (p.y + q.y)/2.0)
+        # the width there: across the way, square to the line between the two floors
+        u = _unit((p.x, p.y), (q.x, q.y))[0] if d > 1e-9 else (1.0, 0.0)
+        cut = LineString([_add((m.x, m.y), (-u[1], u[0]), -3*PASS), _add((m.x, m.y), (-u[1], u[0]), 3*PASS)])
+        bits = [g for g in getattr(cut.intersection(floor), 'geoms', [cut.intersection(floor)])
+                if not g.is_empty and g.distance(m) < 1e-6]
+        width = max(g.length for g in bits) if bits else 0.0
+        return ' — it narrows to about %.2f m near (%.2f, %.2f)' % (width, m.x, m.y)
+
+    def _open_edge(self):
+        for h in self.env_hosts:
             if h.open:
                 for i in range(1, 10):
                     s_ = h.L*i/10.0
-                    r = self.room_at(_add(h.at(s_), h.frame(s_ - 0.01, s_ + 0.01)[1], h.t/2.0 + PROBE))
-                    if r not in (None, OUTSIDE):
-                        start.add(id(r))
-        if not start:
+                    yield _add(h.at(s_), h.frame(s_ - 0.01, s_ + 0.01)[1], h.t/2.0 + PROBE)
+
+    def _walkable(self, flights, ends, missed, whence):
+        """The second walk, over the floor a person can stand on."""
+        level = self.spec['level']
+        on = lambda r: r.get('level') or level
+        floor = unary_union([f.buffer(0.01, join_style=2) for f in self.faces]).buffer(-0.01, join_style=2)
+        floor = floor.intersection(self.I)
+        steps = [LineString(self.spec['dividers'][s['divider']]).buffer(0.02)
+                 for s in self.open_sides if on(s['rooms'][0]) != on(s['rooms'][1])]
+        taken = [g[k] for _, g in flights for k in ('block', 'void', 'open') if g.get(k) is not None]
+        taken += [f['floor'] for f in self.fittings]
+        taken += [Polygon(a['pts']) for a in self.spec['areas'] if a['style'] == 'fitting']
+        if taken or steps:
+            floor = floor.difference(unary_union([t.buffer(0) for t in taken] + steps))
+        half = PASS/2.0
+        cores = [c for c in _polys(floor.buffer(-half, join_style=2)) if c.area > 1e-4]
+        near = half + GRIP
+
+        def pieces(line, room=None):
+            """The walkable pieces within a step of a doorway or the end of a
+            flight; on the side of it a room is, where one is named."""
+            out = set()
+            for i, c in enumerate(cores):
+                if room is not None and not c.intersects(room['face']):
+                    continue
+                if c.distance(line) <= near:
+                    out.add(('piece', i))
+            return out
+        # a room nobody can stand in (a cupboard, a shelf) is reached by reaching into it, as its door goes
+        small = dict((id(r), r) for r in self.rooms if not any(c.intersects(r['face']) for c in cores))
+        graph, starts, blind = {}, set(), []
+
+        def join(a, b):
+            for x in a:
+                for y in b:
+                    if x != y:
+                        graph.setdefault(x, set()).add(y)
+                        graph.setdefault(y, set()).add(x)
+
+        def side(room, line, p):
+            if room is OUTSIDE:
+                return set(['outside'])
+            if room is not None and id(room) in small:
+                return set([('room', id(room))])
+            if room is None:
+                return set()
+            return pieces(line, room)
+        for k in self.passages():
+            o, h = k['opening'], k['opening']['host']
+            u = o['frame'][0]
+            n = (-u[1], u[0])
+            line = o['hole'].exterior
+            got = [side(room, line, None) for room in k['rooms']]
+            for g_, room in zip(got, k['rooms']):
+                if not g_ and room not in (None, OUTSIDE) and id(room) not in missed:
+                    blind.append((o, room))
+            join(*got)
+        for p, q, kind in ends:
+            if kind == 'both':
+                join(pieces(p), pieces(q))
+            elif kind == 'arrive':
+                starts |= pieces(p)
+        if 'outside' in graph:
+            starts.add('outside')
+        for p in self._open_edge():
+            starts |= pieces(Point(p))
+        if not starts:
             return
-        seen, todo = set(start), list(start)
-        while todo:
-            for nxt in graph.get(todo.pop(), ()):
-                if nxt not in seen:
-                    seen.add(nxt)
-                    todo.append(nxt)
-        whence = 'the front door' if id(OUTSIDE) in start else 'the stair'
+        seen = _walk(graph, starts)
+        said = set()
+        for o, room in blind:
+            if id(o) not in said:
+                said.add(id(o))
+                self.warn('%s: the %s in wall %s opens onto less than %.1f m clear in %s: nobody can walk on from it'
+                          % (o['where'], o['kind'], o['host'].id, PASS, room['name'] or 'a space with no room in it'))
         for r in self.rooms:
-            if id(r) not in seen:
-                self.warn('%s: no door leads to %s from %s' % (r['where'], r['name'], whence))
+            if id(r) in missed:
+                continue
+            if id(r) in small:
+                ok = ('room', id(r)) in seen
+            else:
+                ok = any(('piece', i) in seen and c.intersects(r['face']) for i, c in enumerate(cores))
+            if not ok:
+                self.warn('%s: %s cannot be walked to from %s: every way in is narrower than %.1f m%s'
+                          % (r['where'], r['name'], whence, PASS, self._pinch(r, cores, seen, graph, floor)))
 
     def _rooflights(self):
         """Each light in the ceiling, with the room it is over: the one
